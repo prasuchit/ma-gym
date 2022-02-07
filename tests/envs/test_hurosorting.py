@@ -4,7 +4,7 @@ import pytest
 
 @pytest.fixture(scope='module')
 def env():
-    env = gym.make('ma_gym:HuRoSorting-v0')
+    env = gym.make('ma_gym:HuRoSorting-v0', custom=False)
     yield env
     env.close()
 
@@ -27,8 +27,10 @@ def test_reset_after_episode_end(env):
     ep_reward = 0
     while not done:
         step_i += 1
-        _, reward_n, done = env.step(env.action_space.sample())
-        print(f"Here's the reward I got: {reward_n} at step: {step_i} and done is {done}")
+        obs, reward_n, done, _ = env.step(env.action_space.sample())
+        # print(f"Here's the reward I got: {reward_n} at step: {step_i} and done is {done} and obs is {obs}")
+        if reward_n != 0 and reward_n != 1:
+            print(f"Here's the reward I got: {reward_n} at step: {step_i} and done is {done}")
         ep_reward += reward_n
 
     assert step_i == env._step_count
@@ -47,5 +49,5 @@ def test_observation_space(env):
 
 
 if __name__ == "__main__":
-    env = gym.make("ma_gym:HuRoSorting-v0")
+    env = gym.make(id="ma_gym:HuRoSorting-v0", custom=False, max_steps=300)
     test_reset_after_episode_end(env)

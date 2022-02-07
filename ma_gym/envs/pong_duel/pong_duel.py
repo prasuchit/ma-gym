@@ -18,12 +18,13 @@ class PongDuel(gym.Env):
 
     metadata = {'render.modes': ['human', 'rgb_array']}
 
-    def __init__(self, step_cost=0, reward=1, max_rounds=10):
+    def __init__(self, step_cost=0, reward=1, max_rounds=3):
         self._grid_shape = (40, 30)
         self.n_agents = 2
         self.reward = reward
         self._max_rounds = max_rounds
-        self.action_space = MultiAgentActionSpace([spaces.Discrete(3) for _ in range(self.n_agents)])
+        # self.action_space = MultiAgentActionSpace([spaces.Discrete(3) for _ in range(self.n_agents)])
+        self.action_space = spaces.Discrete(3 ** self.n_agents)
 
         self._step_count = None
         self._step_cost = step_cost
@@ -34,9 +35,10 @@ class PongDuel(gym.Env):
         self.__rounds = None
 
         # agent pos(2), ball pos (2), balldir (6-onehot)
-        self._obs_low = np.array([0., 0., 0., 0.] + [0.] * len(BALL_DIRECTIONS), dtype=np.float32)
-        self._obs_high = np.array([1., 1., 1., 1.] + [1.] * len(BALL_DIRECTIONS), dtype=np.float32)
-        self.observation_space = MultiAgentObservationSpace([spaces.Box(self._obs_low, self._obs_high)for _ in range(self.n_agents)])
+        self._obs_low = np.array(([0., 0., 0., 0.] + [0.] * len(BALL_DIRECTIONS)) * self.n_agents, dtype=np.float32)
+        self._obs_high = np.array(([1., 1., 1., 1.] + [1.] * len(BALL_DIRECTIONS)) * self.n_agents, dtype=np.float32)
+        # self.observation_space = MultiAgentObservationSpace([spaces.Box(self._obs_low, self._obs_high)for _ in range(self.n_agents)])
+        self.observation_space = spaces.Box(self._obs_low, self._obs_high)
 
         self.curr_ball_dir = None
         self.viewer = None
@@ -98,7 +100,8 @@ class PongDuel(gym.Env):
 
             _obs.append(_agent_i_obs)
 
-        return _obs
+        # return _obs 
+        return np.concatenate(_obs)
 
     def __init_ball_pos(self):
         self.ball_pos = [self.np_random.randint(5, self._grid_shape[0] - 5), self.np_random.randint(10, self._grid_shape[1] - 10)]
@@ -231,17 +234,27 @@ class PongDuel(gym.Env):
         return [seed]
 
     def step(self, action_n):
+        mapping = {
+            i: (i % 3, i // 3) 
+            for i in range(3 ** self.n_agents)
+        }
+        action_n = mapping[action_n]
         assert len(action_n) == self.n_agents
         self._step_count += 1
+        new_rewards = 1 
         rewards = [self._step_cost for _ in range(self.n_agents)]
 
         # if ball is beyond paddle, initiate a new round
         if self.ball_pos[1] < 1:
             rewards = [0, self.reward]
+            new_rewards = 0
             self.__rounds += 1
+            self._agent_dones = [True, True]
         elif self.ball_pos[1] >= (self._grid_shape[1] - 1):
             rewards = [self.reward, 0]
             self.__rounds += 1
+            new_rewards = 0
+            self._agent_dones = [True, True]
 
         if self.__rounds == self._max_rounds:
             self._agent_dones = [True for _ in range(self.n_agents)]
@@ -257,7 +270,8 @@ class PongDuel(gym.Env):
         for i in range(self.n_agents):
             self._total_episode_reward[i] += rewards[i]
 
-        return self.get_agent_obs(), rewards, self._agent_dones, {'rounds': self.__rounds}
+        # return self.get_agent_obs(), rewards, self._agent_dones, {'rounds': self.__rounds}
+        return self.get_agent_obs(), new_rewards, all(self._agent_dones), {'rounds': self.__rounds}
 
 
 CELL_SIZE = 5

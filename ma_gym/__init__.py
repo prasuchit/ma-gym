@@ -60,6 +60,9 @@ register(
 register(
     id='HuRoSorting-v0',
     entry_point='ma_gym.envs.huro_sorting:HuRoSorting',
+    kwargs = {
+        'custom': True
+    }
 )
 
 for game_info in [[(5, 5), 2, 1], [(7, 7), 4, 2]]:  # [(grid_shape, predator_n, prey_n),..]
