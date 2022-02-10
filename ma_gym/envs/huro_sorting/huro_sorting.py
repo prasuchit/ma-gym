@@ -264,7 +264,7 @@ class HuRoSorting(gym.Env):
             else:
                 logger.error("Not a valid current state, ending episode!")
                 self._agent_dones = True
-                return self.reset(), self.reward, self._agent_dones
+                return self.reset(), self.reward, self._agent_dones, {}
 
         self.get_reward(agents_action)
         sid_rob = self.vals2sid(nxtS = nxt_s[0])
@@ -289,9 +289,9 @@ class HuRoSorting(gym.Env):
             self.reward = 0
 
         if self.custom:
-            return np.concatenate((one_hot_rob_s, one_hot_hum_s), axis=0), self.reward, self._agent_dones, None
+            return np.concatenate((one_hot_rob_s, one_hot_hum_s), axis=0), self.reward, self._agent_dones, {}
         else:
-            return [one_hot_rob_s, one_hot_hum_s], self.reward, self._agent_dones, None
+            return [one_hot_rob_s, one_hot_hum_s], self.reward, self._agent_dones, {}
 
     def sid2vals(self, s):
         '''
