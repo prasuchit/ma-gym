@@ -88,7 +88,7 @@ class HuRoSorting(gym.Env):
             self.observation_space = MultiAgentObservationSpace([spaces.Box(self._obs_low, self._obs_high)
                                                                 for _ in range(self.n_agents)])
         else:
-            action_high = np.array([np.inf] * self.nAAgent)
+            action_high = np.array([np.inf] * self.nAGlobal)
             self.action_space = spaces.Box(-action_high, action_high)
             # self.action_space = spaces.Discrete(self.nAGlobal)
             self._obs_high = np.ones(self.nSGlobal)
@@ -111,7 +111,7 @@ class HuRoSorting(gym.Env):
                     self.start[i][j] = 1
             self.start[i][:] = self.start[i][:] / \
                 np.count_nonzero(self.start[i][:])
-            assert np.sum(self.start[i]) == 1, "Start state probabilities don't add up to 1!"
+            assert np.sum(self.start[i]) == 1, "Start state distb doesn't add up to 1!"
 
     def get_action_meanings(self, action):
         '''
@@ -120,71 +120,78 @@ class HuRoSorting(gym.Env):
         return ACTION_MEANING[action]
     
     def get_state_meanings(self, o_loc, eef_loc, pred):
+        '''
+        @brief - Just a translator to make it human-readable.
+        '''
         return ONIONLOC[o_loc], EEFLOC[eef_loc], PREDICTIONS[pred]
 
     def get_reward(self, acts):
         '''
         @brief Provides joint reward for appropriate team behavior.
         '''
-
         o_loc_rob, eef_loc_rob, pred_rob = self.sid2vals(self.prev_obsv[0])
         o_loc_hum, eef_loc_hum, pred_hum = self.sid2vals(self.prev_obsv[1])
         act_rob = acts[0]
         act_hum = acts[1]
         ######## INDEPENDENT FEATURES ########
-        # If agent doesn't know its onion loc, and decide to do detect
+
+        ##################### Robot ##########################
+
+        # If robot doesn't know its onion loc, and decide to do detect
         if (o_loc_rob == 0 and act_rob == 1):
             self.reward += 1
-        # If agent knows its onion pred, the onion is on conv and decides to pick
+        # If robot knows its onion pred, the onion is on conv and decides to pick
         elif (pred_rob != 0 and o_loc_rob == 1 and act_rob == 2):
             self.reward += 1
-        # If agent has a bad onion pred, onion has been picked and decides to place in bin
+        # If robot has a bad onion pred, onion has been picked and decides to place in bin
         elif (pred_rob == 1 and o_loc_rob == 3 and act_rob == 5):
             self.reward += 1
-        # If agent has a good onion pred, onion has been picked and decides to inspect
+        # If robot has a good onion pred, onion has been picked and decides to inspect
         elif (pred_rob == 2 and o_loc_rob == 3 and act_rob == 3):
             self.reward += 1
-        # If agent has a bad onion pred, onion has been picked and decides to place on conveyor
+        # If robot has a bad onion pred, onion has been picked and decides to place on conveyor
         elif (pred_rob == 1 and o_loc_rob == 3 and act_rob == 4):
             self.reward -= 1
-        # If agent has a good onion pred, onion has been picked and decides to place in bin
+        # If robot has a good onion pred, onion has been picked and decides to place in bin
         elif (pred_rob == 2 and o_loc_rob == 3 and act_rob == 5):
             self.reward -= 1
-        # If agent has a bad onion pred, onion has been picked and decides to inspect
+        # If robot has a bad onion pred, onion has been picked and decides to inspect
         elif (pred_rob == 1 and o_loc_rob == 3 and act_rob == 3):
             self.reward -= 1
-        # If agent has inspected and found a good onion pred, and decides to place on conv
+        # If robot has inspected and found a good onion pred, and decides to place on conv
         elif (pred_rob == 2 and o_loc_rob == 2 and act_rob == 4):
             self.reward += 1
-        # If agent has inspected and found a bad onion pred, and decides to place in bin
+        # If robot has inspected and found a bad onion pred, and decides to place in bin
         elif (pred_rob == 1 and o_loc_rob == 2 and act_rob == 5):
             self.reward += 1
-            
-        # If agent doesn't know its onion loc, and decide to do detect
+
+        ##################### Human #########################
+
+        # If human doesn't know its onion loc, and decide to do detect
         if (o_loc_hum == 0 and act_hum == 1):
             self.reward += 1
-        # If agent knows its onion pred, the onion is on conv and decides to pick
+        # If human knows its onion pred, the onion is on conv and decides to pick
         elif (pred_hum != 0 and o_loc_hum == 1 and act_hum == 2):
             self.reward += 1
-        # If agent has a bad onion pred, onion has been picked and decides to place in bin
+        # If human has a bad onion pred, onion has been picked and decides to place in bin
         elif (pred_hum == 1 and o_loc_hum == 3 and act_hum == 5):
             self.reward += 1
-        # If agent has a good onion pred, onion has been picked and decides to inspect
+        # If human has a good onion pred, onion has been picked and decides to inspect
         elif (pred_hum == 2 and o_loc_hum == 3 and act_hum == 3):
             self.reward += 1
-        # If agent has a bad onion pred, onion has been picked and decides to place on conveyor
+        # If human has a bad onion pred, onion has been picked and decides to place on conveyor
         elif (pred_hum == 1 and o_loc_hum == 3 and act_hum == 4):
             self.reward -= 1
-        # If agent has a good onion pred, onion has been picked and decides to place in bin
+        # If human has a good onion pred, onion has been picked and decides to place in bin
         elif (pred_hum == 2 and o_loc_hum == 3 and act_hum == 5):
             self.reward -= 1
-        # If agent has a bad onion pred, onion has been picked and decides to inspect
+        # If human has a bad onion pred, onion has been picked and decides to inspect
         elif (pred_hum == 1 and o_loc_hum == 3 and act_hum == 3):
             self.reward -= 1
-        # If agent has inspected and found a good onion pred, and decides to place on conv
+        # If human has inspected and found a good onion pred, and decides to place on conv
         elif (pred_hum == 2 and o_loc_hum == 2 and act_hum == 4):
             self.reward += 1
-        # If agent has inspected and found a bad onion pred, and decides to place in bin
+        # If human has inspected and found a bad onion pred, and decides to place in bin
         elif (pred_hum == 1 and o_loc_hum == 2 and act_hum == 5):
             self.reward += 1
 
@@ -225,6 +232,7 @@ class HuRoSorting(gym.Env):
         return self.get_init_obs()
 
     def set_prev_obsv(self, agent_id, s_id):
+        print("Setting prev obsv at step no.: ",self._step_count)
         self.prev_obsv[agent_id] = copy.copy(s_id)
 
     def get_prev_obsv(self, agent_id):
@@ -245,24 +253,33 @@ class HuRoSorting(gym.Env):
             agents_action_id = np.argmax(agents_action).item()
             agents_action = (agents_action_id // self.nAAgent,    # Currently PPO returns 1 action mapped to all agents.
                             agents_action_id % self.nAAgent)     # Here we're splitting it up to each agent action.
+            if verbose:
+                logger.info(f"Action in: {agents_action_id}, actions out: {agents_action}")
         assert len(agents_action) == self.n_agents, 'Num actions != num agents.'
+        self._step_count += 1
+        self.reward = 0
         if verbose:
             o_loc_0, eef_loc_0, pred_0 = self.sid2vals(self.prev_obsv[0])
             o_loc_1, eef_loc_1, pred_1 = self.sid2vals(self.prev_obsv[1])
-            print(f'Agent 0 state: {self.get_state_meanings(o_loc_0, eef_loc_0, pred_0)} | Agent 1 state: {self.get_state_meanings(o_loc_1, eef_loc_1, pred_1)}')
-            print(f'Agent 0 action: {self.get_action_meanings(agents_action[0])} | Agent 1 action: {self.get_action_meanings(agents_action[1])}\n')
-        self._step_count += 1
-        self.reward = 0
-        # print("Current step count is: ", self._step_count)
-        # sleep(0.1)
+            logger.info(f'Step {self._step_count}: Agent 0 state: {self.get_state_meanings(o_loc_0, eef_loc_0, pred_0)} | Agent 1 state: {self.get_state_meanings(o_loc_1, eef_loc_1, pred_1)}')
+            logger.info(f'Step {self._step_count}: Agent 0 action: {self.get_action_meanings(agents_action[0])} | Agent 1 action: {self.get_action_meanings(agents_action[1])}\n')
+        
         nxt_s = {}
         for agent_i, action in enumerate(agents_action):
             o_loc, eef_loc, pred = self.sid2vals(self.prev_obsv[agent_i])
             if self.isValidState(o_loc, eef_loc, pred):
-                nxt_s[agent_i] = self.findNxtState(
-                    o_loc, eef_loc, pred, action)
+                if self.isValidAction(o_loc, eef_loc, pred, action):
+                    nxt_s[agent_i] = self.findNxtState(
+                        o_loc, eef_loc, pred, action)
+                else:
+                    if verbose:
+                        logger.error(f"Step {self._step_count}: Not a valid action: {self.get_action_meanings(action)}, in current state: {self.get_state_meanings(o_loc, eef_loc, pred)}, agent {agent_i} can't transition anywhere else with this. Staying put and ending episode!")
+                    self._agent_dones = True
+                    # ns = np.concatenate((self.get_one_hot(self.prev_obsv[0], self.nSAgent), self.get_one_hot(self.prev_obsv[1], self.nSAgent)), axis = 0)
+                    return self.reset(), self.reward, self._agent_dones, {}
             else:
-                logger.error("Not a valid current state, ending episode!")
+                if verbose:
+                    logger.error(f"Step {self._step_count}: Not a valid current state {self.get_state_meanings(o_loc, eef_loc, pred)} for agent {agent_i}, ending episode!")
                 self._agent_dones = True
                 return self.reset(), self.reward, self._agent_dones, {}
 
@@ -273,7 +290,7 @@ class HuRoSorting(gym.Env):
         one_hot_hum_s = self.get_one_hot(sid_hum, self.nSAgent)
         self.set_prev_obsv(0, sid_rob)
         self.set_prev_obsv(1, sid_hum)
-
+        
         if self._step_count >= self._max_episode_steps:
             self._agent_dones = True
 
@@ -282,7 +299,7 @@ class HuRoSorting(gym.Env):
         elif self.steps_beyond_done is not None:
             if self.steps_beyond_done == 0:
                 logger.warning(
-                    "You are calling 'step()' even though this environment has already returned all(dones) = True for "
+                    f"Step {self._step_count}: You are calling 'step()' even though this environment has already returned all(dones) = True for "
                     "all agents. You should always call 'reset()' once you receive 'all(dones) = True' -- any further"
                     " steps are undefined behavior.")
             self.steps_beyond_done += 1
@@ -314,19 +331,42 @@ class HuRoSorting(gym.Env):
         pred = nxtS[2]
         return (ol + self.nOnionLoc * (eefl + self.nEEFLoc * pred))
 
-    def getValidActions(self, onionLoc, eefLoc, pred):
-        ''' 
+    def isValidAction(self, onionLoc, eefLoc, pred, action):
+        '''
         @brief - For each state there are a few invalid actions, returns only valid actions.
         '''
-        # I will come back to this if need be.
-        pass
-
+        assert action <= 5, 'Unavailable action. Check if action is within num actions'
+        if action == 0: # Noop, this can be done from anywhere.
+            return True
+        elif action == 1:   # Detect
+            if pred == 0 or onionLoc == 0:  # Only when you don't know about the onion
+                return True
+            else: return False
+        elif action == 2:   # Pick
+            if onionLoc == 1 and eefLoc != 1:   # As long as onion is on conv and eef is not
+                return True
+            else: return False
+        elif action == 3 or action == 4 or action == 5:   # Inspect # Placeonconv # Placeinbin
+            if pred != 0 and onionLoc != 0: # Pred and onion loc both are known. 
+                if onionLoc == eefLoc and eefLoc != 1:    # Onion is in hand and hand isn't on conv
+                    return True
+                else: return False
+            else: return False
+        else: 
+            logger.error(f"Step {self._step_count}: Trying an impossible action are we? Better luck next time!")
+            return False
+        
     def findNxtState(self, onionLoc, eefLoc, pred, a):
         ''' 
-        @brief - For each state there are a few invalid nextstates, returns only valid nextstates.
+        @brief - Returns the valid nextstates. Currently it's deterministic transition, could be made stochastic.
+                This function assumes that you're doing the action from the appropriate current state.
+                eg: If (onionloc - unknown, eefloc - onconv, pred - unknown), that's still a valid
+                current state but an inappropriate state to perform inspect action and you shouldn't
+                be able to transition into the next state induced by inspect. (Thanks @YikangGui for catching this.)
+                Therefore inappropriate actions are filtered out by getValidActions method now. 
 
-        Onionloc: {0: 'Unknown', 1: 'OnConveyor', 2: 'InFront', 3: 'Picked/AtHome'}
-        eefLoc = {0: 'OnConveyor', 1: 'InFront', 2: 'Picked/AtHome', 3:  'InBin'}
+        Onionloc: {0: 'Unknown', 1: 'OnConveyor', 2: 'InFront', 3: 'AtHome'}
+        eefLoc = {0: 'InBin', 1: 'OnConveyor', 2: 'InFront', 3: 'AtHome'}
         Predictions = {0:  'Unknown', 1: 'Bad', 2: 'Good}
         Actions: {0: 'Noop', 1: 'Detect', 2: 'Pick', 3: 'Inspect', 4: 'PlaceOnConveyor', 5: 'PlaceInBin}
         '''
@@ -340,25 +380,26 @@ class HuRoSorting(gym.Env):
             return n_states[choice_index]
         elif a == 2:
             ''' Pick '''
-            return [3, 2, pred]
+            return [3, 3, pred]
         elif a == 3:
             ''' Inspect '''
-            n_states = [[2, 1, pred], [2, 1, int(not pred)]]
+            n_states = [[2, 2, 1], [2, 2, 2]]
             choice_index = np.random.choice(len(n_states))
             return n_states[choice_index]
         elif a == 4:
             ''' PlaceOnConv '''
-            return [0, 0, 0]
+            return [0, 1, 0]
         elif a == 5:
             ''' PlaceInBin '''
-            return [0, 3, 0]
+            return [0, 0, 0]
 
     def isValidState(self, onionLoc, eefLoc, pred):
         '''
         @brief - Checks if a given state is valid or not.
 
         '''
-        if (onionLoc == 2 and eefLoc != 1) or (onionLoc == 3 and eefLoc != 2) or (onionLoc == 0 and pred != 0):
+        if (onionLoc == 2 and eefLoc != 2) or (onionLoc == 3 and eefLoc != 3) or \
+            (onionLoc == 0 and pred != 0) or (onionLoc != 0 and pred == 0):
             return False
         return True
 
@@ -387,13 +428,13 @@ ONIONLOC = {
     0: 'Unknown',
     1: 'OnConveyor',
     2: 'InFront',
-    3: 'Picked/AtHome'
+    3: 'AtHome'
 }
 EEFLOC = {
-    0: 'OnConveyor',
-    1: 'InFront',
-    2: 'Picked/AtHome',
-    3: 'InBin'
+    0: 'InBin',
+    1: 'OnConveyor',
+    2: 'InFront',
+    3: 'AtHome'
 }
 
 PREDICTIONS = {
