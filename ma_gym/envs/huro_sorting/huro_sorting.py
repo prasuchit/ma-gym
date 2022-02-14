@@ -88,11 +88,11 @@ class HuRoSorting(gym.Env):
             self.observation_space = MultiAgentObservationSpace([spaces.Box(self._obs_low, self._obs_high)
                                                                 for _ in range(self.n_agents)])
         else:
-            action_high = np.array([np.inf] * self.nAGlobal)
-            self.action_space = spaces.Box(-action_high, action_high)
-            # self.action_space = spaces.Discrete(self.nAGlobal)
-            self._obs_high = np.ones(self.nSGlobal)
-            self._obs_low = np.zeros(self.nSGlobal)
+            # action_high = np.array([np.inf] * self.nAGlobal)
+            # self.action_space = spaces.Box(-action_high, action_high)
+            self.action_space = spaces.Discrete(self.nAGlobal)
+            self._obs_high = np.ones(22)
+            self._obs_low = np.zeros(22)
             self.observation_space = spaces.Box(self._obs_low, self._obs_high)
         self.reward = 0
         self._full_obs = None
@@ -225,14 +225,30 @@ class HuRoSorting(gym.Env):
         '''
         @brief - Just setting all params to defaults and returning a valid start obsv.
         '''
+        # print("Came into reset!")
         self._step_count = 0
         self.reward = 0
         self._agent_dones = False
         self.steps_beyond_done = None
-        return self.get_init_obs()
+        # return self.get_init_obs()
+        fixed_state = self.vals2sid([0,3,0])
+        onion_loc_init = np.zeros(4)
+        onion_loc_init[0] = 1
+        eef_loc_init = np.zeros(4)
+        eef_loc_init[3] = 1
+        prediction_init = np.zeros(3)
+        prediction_init[0] = 1
+
+        one_hot_state = np.tile(np.concatenate([onion_loc_init, eef_loc_init, prediction_init]), 2).flatten()
+        # print(f'state: {[0,3,0]}, one hot: {one_hot_state}')
+        self.set_prev_obsv(0, fixed_state)
+        self.set_prev_obsv(1, fixed_state)
+
+        return one_hot_state
+        # return np.concatenate((self.get_one_hot(fixed_state, self.nSAgent), self.get_one_hot(fixed_state, self.nSAgent)), axis = 0)
 
     def set_prev_obsv(self, agent_id, s_id):
-        print("Setting prev obsv at step no.: ",self._step_count)
+        # print("Step count inside prev obs update: ",self._step_count)
         self.prev_obsv[agent_id] = copy.copy(s_id)
 
     def get_prev_obsv(self, agent_id):
@@ -250,11 +266,14 @@ class HuRoSorting(gym.Env):
         @brief - Performs given actions and returns one_hot(joint next obsvs), reward and done
         '''
         if self.custom:
-            agents_action_id = np.argmax(agents_action).item()
-            agents_action = (agents_action_id // self.nAAgent,    # Currently PPO returns 1 action mapped to all agents.
-                            agents_action_id % self.nAAgent)     # Here we're splitting it up to each agent action.
+            # agents_action_id = np.argmax(agents_action).item()
+            # agents_action = (agents_action_id // self.nAAgent,    # Currently PPO returns 1 action mapped to all agents.
+                            # agents_action_id % self.nAAgent)     # Here we're splitting it up to each agent action.
+            agents_action = (agents_action // self.nAAgent,    # Currently PPO returns 1 action mapped to all agents.
+                            agents_action % self.nAAgent)     # Here we're splitting it up to each agent action.
+            
             if verbose:
-                logger.info(f"Action in: {agents_action_id}, actions out: {agents_action}")
+                logger.info(f"Action in: {agents_action}, actions out: {agents_action}")
         assert len(agents_action) == self.n_agents, 'Num actions != num agents.'
         self._step_count += 1
         self.reward = 0
@@ -263,8 +282,9 @@ class HuRoSorting(gym.Env):
             o_loc_1, eef_loc_1, pred_1 = self.sid2vals(self.prev_obsv[1])
             logger.info(f'Step {self._step_count}: Agent 0 state: {self.get_state_meanings(o_loc_0, eef_loc_0, pred_0)} | Agent 1 state: {self.get_state_meanings(o_loc_1, eef_loc_1, pred_1)}')
             logger.info(f'Step {self._step_count}: Agent 0 action: {self.get_action_meanings(agents_action[0])} | Agent 1 action: {self.get_action_meanings(agents_action[1])}\n')
-        
+
         nxt_s = {}
+        # print("\nStep count at start of step function: ", self._step_count)
         for agent_i, action in enumerate(agents_action):
             o_loc, eef_loc, pred = self.sid2vals(self.prev_obsv[agent_i])
             if self.isValidState(o_loc, eef_loc, pred):
@@ -275,22 +295,46 @@ class HuRoSorting(gym.Env):
                     if verbose:
                         logger.error(f"Step {self._step_count}: Not a valid action: {self.get_action_meanings(action)}, in current state: {self.get_state_meanings(o_loc, eef_loc, pred)}, agent {agent_i} can't transition anywhere else with this. Staying put and ending episode!")
                     self._agent_dones = True
-                    # ns = np.concatenate((self.get_one_hot(self.prev_obsv[0], self.nSAgent), self.get_one_hot(self.prev_obsv[1], self.nSAgent)), axis = 0)
-                    return self.reset(), self.reward, self._agent_dones, {}
+                    ns = np.concatenate((self.get_one_hot(self.prev_obsv[0], self.nSAgent), self.get_one_hot(self.prev_obsv[1], self.nSAgent)), axis = 0)
+                    self.reward = -0.1
+                    # print(f'Step {self._step_count}: Invalid action: Reward: {self.reward}')
+                    return ns, self.reward, self._agent_dones, {}
             else:
                 if verbose:
                     logger.error(f"Step {self._step_count}: Not a valid current state {self.get_state_meanings(o_loc, eef_loc, pred)} for agent {agent_i}, ending episode!")
                 self._agent_dones = True
-                return self.reset(), self.reward, self._agent_dones, {}
+                ns = np.concatenate((self.get_one_hot(self.prev_obsv[0], self.nSAgent), self.get_one_hot(self.prev_obsv[1], self.nSAgent)), axis = 0)
+                self.reward = -0.1
+                # print(f'Step {self._step_count}: Invalid state: Reward: {self.reward}')
+                return ns, self.reward, self._agent_dones, {}
 
         self.get_reward(agents_action)
+
+        onion_loc_rob = np.zeros(4)
+        onion_loc_rob[nxt_s[0][0]] = 1
+        eef_loc_rob = np.zeros(4)
+        eef_loc_rob[nxt_s[0][1]] = 1
+        prediction_rob = np.zeros(3)
+        prediction_rob[nxt_s[0][2]] = 1
+
+        onion_loc_hum = np.zeros(4)
+        onion_loc_hum[nxt_s[1][0]] = 1
+        eef_loc_hum = np.zeros(4)
+        eef_loc_hum[nxt_s[1][1]] = 1
+        prediction_hum = np.zeros(3)
+        prediction_hum[nxt_s[1][2]] = 1
+
+        one_hot_state = np.concatenate([onion_loc_rob, eef_loc_rob, prediction_rob, onion_loc_hum, eef_loc_hum, prediction_hum])
+        # print(f'state: {nxt_s}, one hot: {one_hot_state}')
         sid_rob = self.vals2sid(nxtS = nxt_s[0])
         sid_hum = self.vals2sid(nxtS = nxt_s[1])
         one_hot_rob_s = self.get_one_hot(sid_rob, self.nSAgent)
         one_hot_hum_s = self.get_one_hot(sid_hum, self.nSAgent)
+        # print("\nStep count Right before prev obs update: ", self._step_count)
         self.set_prev_obsv(0, sid_rob)
         self.set_prev_obsv(1, sid_hum)
-        
+        # print(f'Step {self._step_count}: Valid state and action Reward: {self.reward}')
+
         if self._step_count >= self._max_episode_steps:
             self._agent_dones = True
 
@@ -306,7 +350,8 @@ class HuRoSorting(gym.Env):
             self.reward = 0
 
         if self.custom:
-            return np.concatenate((one_hot_rob_s, one_hot_hum_s), axis=0), self.reward, self._agent_dones, {}
+            # return np.concatenate((one_hot_rob_s, one_hot_hum_s), axis=0), self.reward, self._agent_dones, {}
+            return one_hot_state, self.reward, self._agent_dones, {}
         else:
             return [one_hot_rob_s, one_hot_hum_s], self.reward, self._agent_dones, {}
 

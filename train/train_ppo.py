@@ -5,7 +5,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 
 # Parallel environments
-env = make_vec_env("ma_gym:HuRoSorting-v0", n_envs=4)
+env = make_vec_env("ma_gym:HuRoSorting-v0", n_envs=1)
 # env = gym.make("ma_gym:HuRoSorting-v0")
 
 if os.path.exists("results/ppo_hurosorting/model_dump.zip"):
