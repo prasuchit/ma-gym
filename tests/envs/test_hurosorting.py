@@ -27,7 +27,8 @@ def test_reset_after_episode_end(env):
     ep_reward = 0
     while not done:
         step_i += 1
-        obs, reward_n, done, _ = env.step(env.action_space.sample())
+        # obs, reward_n, done, _ = env.step(env.action_space.sample(), verbose=1)
+        obs, reward_n, done, _ = env.step(35, verbose=1)
         # print(f"Here's the reward I got: {reward_n} at step: {step_i} and done is {done} and obs is {obs}")
         if reward_n != 0 and reward_n != 1:
             print(f"Here's the reward I got: {reward_n} at step: {step_i} and done is {done}")
@@ -49,5 +50,5 @@ def test_observation_space(env):
 
 
 if __name__ == "__main__":
-    env = gym.make(id="ma_gym:HuRoSorting-v0", custom=False, max_steps=300)
+    env = gym.make(id="ma_gym:HuRoSorting-v0", custom=True, max_steps=1)
     test_reset_after_episode_end(env)
