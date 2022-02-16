@@ -91,11 +91,13 @@ class HuRoSorting(gym.Env):
         else:
             # action_high = np.array([np.inf] * self.nAGlobal)
             # self.action_space = spaces.Box(-action_high, action_high)
-            self.action_space = spaces.Discrete(self.nAGlobal)
+            self.action_space = spaces.MultiDiscrete([self.nAAgent] * self.n_agents)
+            # self.action_space = spaces.Discrete(self.nAGlobal)
             self._obs_high = np.ones(22)
             self._obs_low = np.zeros(22)
             self.observation_space = spaces.Box(self._obs_low, self._obs_high)
-        self.reward = 0
+        self.step_cost = -0.01
+        self.reward = self.step_cost
         self._full_obs = None
         self._agent_dones = None
         self.steps_beyond_done = None
@@ -265,7 +267,7 @@ class HuRoSorting(gym.Env):
         '''
         # print("Came into reset!")
         self._step_count = 0
-        self.reward = 0
+        self.reward = self.step_cost
         self._agent_dones = False
         self.steps_beyond_done = None
         return self.get_init_obs()
@@ -309,14 +311,13 @@ class HuRoSorting(gym.Env):
             # agents_action_id = np.argmax(agents_action).item()
             # agents_action = (agents_action_id // self.nAAgent,    # Currently PPO returns 1 action mapped to all agents.
                             # agents_action_id % self.nAAgent)     # Here we're splitting it up to each agent action.
-            agents_action = (agents_action // self.nAAgent,    # Currently PPO returns 1 action mapped to all agents.
-                            agents_action % self.nAAgent)     # Here we're splitting it up to each agent action.
-            
+            # agents_action = (agents_action // self.nAAgent,    # Currently PPO returns 1 action mapped to all agents.
+            #                 agents_action % self.nAAgent)     # Here we're splitting it up to each agent action.
             if verbose:
                 logger.info(f"Action in: {agents_action}, actions out: {agents_action}")
         assert len(agents_action) == self.n_agents, 'Num actions != num agents.'
         self._step_count += 1
-        self.reward = 0
+        self.reward = self.step_cost
         if verbose:
             o_loc_0, eef_loc_0, pred_0 = self.sid2vals(self.prev_obsv[0])
             o_loc_1, eef_loc_1, pred_1 = self.sid2vals(self.prev_obsv[1])
@@ -381,9 +382,10 @@ class HuRoSorting(gym.Env):
         if self._step_count >= self._max_episode_steps:
             self._agent_dones = True
 
-        if self.reward < 0:
+        if self.reward < self.step_cost:
             self._agent_dones = True
-
+        # if self.reward != 0:
+        #     self._agent_dones = True
 
         if self.steps_beyond_done is None and self._agent_dones:
             self.steps_beyond_done = 0
@@ -464,20 +466,25 @@ class HuRoSorting(gym.Env):
         '''
         if a == 0:
             ''' Noop '''
-            return [onionLoc, eefLoc, pred]
+            return [onionLoc, eefLoc, pred].copy()
         elif a == 1:
             ''' Detect '''
-            n_states = [[1, eefLoc, 1], [1, eefLoc, 2]]
-            choice_index = np.random.choice(len(n_states))
-            return n_states[choice_index]
+            prob = [0.8, 0.2]
+            n_states = [[1, eefLoc, 2], [1, eefLoc, 1]]
+            choice_index = np.random.choice(len(n_states), p=prob)
+            return n_states[choice_index].copy()
         elif a == 2:
             ''' Pick '''
             return [3, 3, pred]
         elif a == 3:
             ''' Inspect '''
-            n_states = [[2, 2, 1], [2, 2, 2]]
-            choice_index = np.random.choice(len(n_states))
-            return n_states[choice_index]
+            if pred == 1:
+                prob = [0.1, 0.9]
+            else:
+                prob = [0.8, 0.2]
+            n_states = [[2, 2, 2], [2, 2, 1]]
+            choice_index = np.random.choice(len(n_states), p=prob)
+            return n_states[choice_index].copy()
         elif a == 4:
             ''' PlaceOnConv '''
             return [0, 1, 0]
