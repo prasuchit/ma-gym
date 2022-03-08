@@ -17,7 +17,7 @@ from ..utils.observation_space import MultiAgentObservationSpace
 logger = logging.getLogger(__name__)
 
 
-class HuRoSorting(gym.Env):
+class HuRoSortingv1(gym.Env):
     """
     This environment is a slightly modified version of sorting env in this paper: MMAP-BIRL(https://arxiv.org/pdf/2109.07788.pdf).
     This is a multi-agent sparse interactions Dec-MDP with 2 agents - a Human and a Robot. The Human agent is always given preference 
@@ -89,14 +89,11 @@ class HuRoSorting(gym.Env):
             self.observation_space = MultiAgentObservationSpace([spaces.Box(self._obs_low, self._obs_high)
                                                                 for _ in range(self.n_agents)])
         else:
-            # action_high = np.array([np.inf] * self.nAGlobal)
-            # self.action_space = spaces.Box(-action_high, action_high)
-            # self.action_space = spaces.MultiDiscrete([self.nAAgent] * self.n_agents)
             self.action_space = spaces.Discrete(self.nAGlobal)
             self._obs_high = np.ones(22)
             self._obs_low = np.zeros(22)
             self.observation_space = spaces.Box(self._obs_low, self._obs_high)
-        self.step_cost = - 0.01
+        self.step_cost = 0.0
         self.reward = self.step_cost
         self._full_obs = None
         self._agent_dones = None
@@ -140,43 +137,19 @@ class HuRoSorting(gym.Env):
 
         ##################### Robot ##########################
 
-        # # If robot doesn't know its onion loc, and decide to do detect
-        # if (o_loc_rob == 0 and act_rob == 1):
-        #     self.reward += 1
-        # # If robot knows its onion pred, the onion is on conv and decides to pick
-        # elif (pred_rob != 0 and o_loc_rob == 1 and act_rob == 2):
-        #     self.reward += 1
-        # # If robot has a bad onion pred, onion has been picked and decides to place in bin
-        # elif (pred_rob == 1 and o_loc_rob == 3 and act_rob == 5):
-        #     self.reward += 1
-        # # If robot has a good onion pred, onion has been picked and decides to inspect
-        # elif (pred_rob == 2 and o_loc_rob == 3 and act_rob == 3):
-        #     self.reward += 1
-        # # If robot has a bad onion pred, onion has been picked and decides to place on conveyor
-        # elif (pred_rob == 1 and o_loc_rob == 3 and act_rob == 4):
-        #     self.reward -= 1
-        # # If robot has a good onion pred, onion has been picked and decides to place in bin
-        # elif (pred_rob == 2 and o_loc_rob == 3 and act_rob == 5):
-        #     self.reward -= 1
-        # # If robot has a bad onion pred, onion has been picked and decides to inspect
-        # elif (pred_rob == 1 and o_loc_rob == 3 and act_rob == 3):
-        #     self.reward -= 1
-        # # If robot has inspected and found a good onion pred, and decides to place on conv
-        # elif (pred_rob == 2 and o_loc_rob == 2 and act_rob == 4):
-        #     self.reward += 1
-        # # If robot has inspected and found a bad onion pred, and decides to place in bin
-        # elif (pred_rob == 1 and o_loc_rob == 2 and act_rob == 5):
-        #     self.reward += 1
-
+        # Bad - PlaceinBin
         if pred_rob == 1 and act_rob == 5:
             self.reward += 1
+        # Good - Placeonconv
         elif pred_rob == 2 and act_rob == 4:
             self.reward += 1
-        # Currently picked, find good, inspect
+        # Currently picked, found good, inspect
         elif o_loc_rob == 3 and pred_rob == 2 and act_rob == 3:
-            self.reward += 1 
+            self.reward += 1
+        # Bad - Placeonconv
         elif pred_rob == 1 and act_rob == 4:
             self.reward -= 1
+        # Good - PlaceinBin
         elif pred_rob == 2 and act_rob == 5:
             self.reward -= 1
 
@@ -210,14 +183,19 @@ class HuRoSorting(gym.Env):
         # elif (pred_hum == 1 and o_loc_hum == 2 and act_hum == 5):
         #     self.reward += 1
 
+        # Bad - PlaceinBin
         if pred_hum == 1 and act_hum == 5:
             self.reward += 1
+        # Good - Placeonconv
         elif pred_hum == 2 and act_hum == 4:
             self.reward += 1
+        # Currently picked, found good, inspect
         elif o_loc_hum == 3 and pred_hum == 2 and act_hum == 3:
             self.reward += 1
+        # Bad - Placeonconv
         elif pred_hum == 1 and act_hum == 4:
             self.reward -= 1
+        # Good - PlaceinBin
         elif pred_hum == 2 and act_hum == 5:
             self.reward -= 1
 
@@ -225,7 +203,7 @@ class HuRoSorting(gym.Env):
         ######## DEPENDENT FEATURES ########
 
         # If both agents have inspected and decided onion is good, and robot doesn't wait for human to place first
-        if (o_loc_rob != 1 and o_loc_hum != 1 and pred_rob == pred_hum == 2 and act_hum !=4 and act_rob != 0):
+        if (o_loc_rob != 1 and o_loc_hum != 1 and pred_rob == pred_hum == 2 and act_hum != 4 and act_rob != 0):
             self.reward -= 3
         # If both agents don't know onion loc and robot doesn't wait for human to choose first
         if (o_loc_hum == o_loc_rob == 0 and act_hum != 1 and act_rob != 0):
@@ -244,59 +222,51 @@ class HuRoSorting(gym.Env):
         s_r = s_h = self.vals2sid([0,3,0])
         self.set_prev_obsv(0, s_r)
         self.set_prev_obsv(1, s_h)
-        # if self.custom:
-        onion_rob, eef_rob, pred_rob = self.sid2vals(s_r)
-        onion_loc_rob = np.zeros(4)
-        onion_loc_rob[onion_rob] = 1
-        eef_loc_rob = np.zeros(4)
-        eef_loc_rob[eef_rob] = 1
-        prediction_rob = np.zeros(3)
-        prediction_rob[pred_rob] = 1
 
-        onion_hum, eef_hum, pred_hum = self.sid2vals(s_r)
-        onion_loc_hum = np.zeros(4)
-        onion_loc_hum[onion_hum] = 1
-        eef_loc_hum = np.zeros(4)
-        eef_loc_hum[eef_hum] = 1
-        prediction_hum = np.zeros(3)
-        prediction_hum[pred_hum] = 1
+        s_g = self.vals2sGlobal(0,3,0,0,3,0)
 
-        one_hot_state = np.concatenate([onion_loc_rob, eef_loc_rob, prediction_rob, onion_loc_hum, eef_loc_hum, prediction_hum])
-        return  one_hot_state
-            # return np.concatenate((self.get_one_hot(s_r, self.nSAgent), self.get_one_hot(s_h, self.nSAgent)), axis = 0)
-        # else:
-        #     return [self.get_one_hot(s_r, self.nSAgent), self.get_one_hot(s_h, self.nSAgent)]
+        return  s_g
+            
+
+    def vals2sGlobal(self, oloc_r, eefloc_r, pred_r, oloc_h, eefloc_h, pred_h):
+        return (oloc_r + self.nOnionLoc * (eefloc_r + self.nEEFLoc * (pred_r + self.nPredict * (oloc_h + self.nOnionLoc * (eefloc_h + self.nEEFLoc * pred_h)))))
+
+    def vals2aGlobal(self, a_r, a_h):
+        return a_r + self.nAAgent * a_h
+
+    def sGlobal2vals(self, s_global):
+        s_g = s_global
+        oloc_r = int(mod(s_g, self.nOnionLoc))
+        s_g = (s_g - oloc_r)/self.nOnionLoc
+        eefloc_r = int(mod(s_g, self.nEEFLoc))
+        s_g = (s_g - eefloc_r)/self.nEEFLoc
+        pred_r = int(mod(s_g, self.nPredict))
+        s_g = (s_g - pred_r)/self.nPredict
+        oloc_h = int(mod(s_g, self.nOnionLoc))
+        s_g = (s_g - oloc_h)/self.nOnionLoc
+        eefloc_h = int(mod(s_g, self.nEEFLoc))
+        s_g = (s_g - eefloc_h)/self.nEEFLoc
+        pred_h = int(mod(s_g, self.nPredict))
+        return oloc_r, eefloc_r, pred_r, oloc_h, eefloc_h, pred_h
+
+    def aGlobal2vals(self, a_global):
+        a_g = a_global
+        a_r = int(mod(a_g, self.nAAgent))
+        a_g = (a_g - a_r)/self.nAAgent
+        a_h = int(mod(a_g, self.nAAgent))
+        return a_r, a_h
 
     def reset(self):
         '''
         @brief - Just setting all params to defaults and returning a valid start obsv.
         '''
-        # print("Came into reset!")
         self._step_count = 0
         self.reward = self.step_cost
         self._agent_dones = False
         self.steps_beyond_done = None
         return self.get_init_obs()
-        # fixed_state = self.vals2sid([0,3,0])
-        # fixed_state = self.vals2sid([2, 2, 2])
-
-        # onion_loc_init = np.zeros(4)
-        # onion_loc_init[0] = 1
-        # eef_loc_init = np.zeros(4)
-        # eef_loc_init[3] = 1
-        # prediction_init = np.zeros(3)
-        # prediction_init[0] = 1
-
-        # one_hot_state = np.tile(np.concatenate([onion_loc_init, eef_loc_init, prediction_init]), 2).flatten()
-        # # print(f'state: {[0,3,0]}, one hot: {one_hot_state}')
-        # self.set_prev_obsv(0, fixed_state)
-        # self.set_prev_obsv(1, fixed_state)
-
-        # return one_hot_state
-        # return np.concatenate((self.get_one_hot(fixed_state, self.nSAgent), self.get_one_hot(fixed_state, self.nSAgent)), axis = 0)
 
     def set_prev_obsv(self, agent_id, s_id):
-        # print("Step count inside prev obs update: ",self._step_count)
         self.prev_obsv[agent_id] = copy.copy(s_id)
 
     def get_prev_obsv(self, agent_id):
@@ -313,16 +283,8 @@ class HuRoSorting(gym.Env):
         '''
         @brief - Performs given actions and returns one_hot(joint next obsvs), reward and done
         '''
-        if self.custom:
-            # agents_action_id = np.argmax(agents_action).item()
-            # agents_action = (agents_action_id // self.nAAgent,    # Currently PPO returns 1 action mapped to all agents.
-            #                 agents_action_id % self.nAAgent)     # Here we're splitting it up to each agent action.
-            agents_action = (agents_action // self.nAAgent,    # Currently PPO returns 1 action mapped to all agents.
-                            agents_action % self.nAAgent)     # Here we're splitting it up to each agent action.
-            if verbose:
-                logger.info(f"Action in: {agents_action}, actions out: {agents_action}")
         agents_action = np.squeeze(agents_action)
-        assert len(agents_action) == self.n_agents, 'Num actions != num agents.'
+        # assert len(agents_action) == self.n_agents, 'Num actions != num agents.'
         self._step_count += 1
         self.reward = self.step_cost
         if verbose:
@@ -344,28 +306,13 @@ class HuRoSorting(gym.Env):
                     self._agent_dones = True
 
                     ''' Sending all invalid actions to  and impossible sink state'''
-                    onion_loc_rob = np.ones(4)
-                    eef_loc_rob = np.ones(4)
-                    prediction_rob = np.ones(3)
-
-                    onion_loc_hum = np.ones(4)
-                    eef_loc_hum = np.ones(4)
-                    prediction_hum = np.ones(3)
-
-                    one_hot_state = np.concatenate([onion_loc_rob, eef_loc_rob, prediction_rob, onion_loc_hum, eef_loc_hum, prediction_hum])
-                    # ns = np.concatenate((self.get_one_hot(self.prev_obsv[0], self.nSAgent), self.get_one_hot(self.prev_obsv[1], self.nSAgent)), axis = 0)
-                    # self.reward = -1
-                    # print(f'Step {self._step_count}: Invalid action: Reward: {self.reward}')
-                    return one_hot_state, self.reward, self._agent_dones, {}
+                    ns_g = self.vals2sGlobal(4,4,3,4,4,3)
+                    return ns_g, self.reward, self._agent_dones, {}
             else:
                 if verbose:
                     logger.error(f"Step {self._step_count}: Not a valid current state {self.get_state_meanings(o_loc, eef_loc, pred)} for agent {agent_i}, ending episode!")
                 self._agent_dones = True
-                # ns = np.concatenate((self.get_one_hot(self.prev_obsv[0], self.nSAgent), self.get_one_hot(self.prev_obsv[1], self.nSAgent)), axis = 0)
-                # self.reward = -1
-                # print(f'Step {self._step_count}: Invalid state: Reward: {self.reward}')
                 raise ValueError
-                # return ns, self.reward, self._agent_dones, {}
 
         self.get_reward(agents_action)
 
@@ -383,16 +330,11 @@ class HuRoSorting(gym.Env):
         prediction_hum = np.zeros(3)
         prediction_hum[nxt_s[1][2]] = 1
 
-        one_hot_state = np.concatenate([onion_loc_rob, eef_loc_rob, prediction_rob, onion_loc_hum, eef_loc_hum, prediction_hum])
-        # print(f'state: {nxt_s}, one hot: {one_hot_state}')
+        ns_g = self.vals2sGlobal(nxt_s[0][0], nxt_s[0][1], nxt_s[0][2], nxt_s[1][0], nxt_s[1][1], nxt_s[1][2])
         sid_rob = self.vals2sid(nxtS = nxt_s[0])
         sid_hum = self.vals2sid(nxtS = nxt_s[1])
-        one_hot_rob_s = self.get_one_hot(sid_rob, self.nSAgent)
-        one_hot_hum_s = self.get_one_hot(sid_hum, self.nSAgent)
-        # print("\nStep count Right before prev obs update: ", self._step_count)
         self.set_prev_obsv(0, sid_rob)
         self.set_prev_obsv(1, sid_hum)
-        # print(f'Step {self._step_count}: Valid state and action Reward: {self.reward}')
 
         if self._step_count >= self._max_episode_steps:
             self._agent_dones = True
@@ -413,11 +355,7 @@ class HuRoSorting(gym.Env):
             self.steps_beyond_done += 1
             self.reward = 0
 
-        if self.custom:
-            # return np.concatenate((one_hot_rob_s, one_hot_hum_s), axis=0), self.reward, self._agent_dones, {}
-            return one_hot_state, self.reward, self._agent_dones, {}
-        else:
-            return [one_hot_rob_s, one_hot_hum_s], self.reward, self._agent_dones, {}
+        return ns_g, self.reward, self._agent_dones, {}
 
     def sid2vals(self, s):
         '''

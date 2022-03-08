@@ -66,6 +66,11 @@ register(
 )
 
 register(
+    id='HuRoSorting-v1',
+    entry_point='ma_gym.envs.huro_sorting_v1:HuRoSortingv1'
+)
+
+register(
     id='DecHuRoSorting-v0',
     entry_point='ma_gym.envs.dec_huro_sorting:DecHuRoSorting'
 )

@@ -82,7 +82,7 @@ class DecHuRoSorting(gym.Env):
         for _ in range(self.n_agents):
             self.observation_space.append(spaces.Box(low=-np.inf, high=+np.inf, shape=(obs_dim,), dtype=np.float32))
             self.action_space.append(spaces.Discrete(self.nAAgent))
-        self.step_cost = -0.01
+        self.step_cost = 0.0
         self.reward = self.step_cost
         self._full_obs = None
         self._agent_dones = [None, None]
@@ -125,6 +125,35 @@ class DecHuRoSorting(gym.Env):
         ######## INDEPENDENT FEATURES ########
 
         ##################### Robot ##########################
+
+        # # If robot doesn't know its onion loc, and decide to do detect
+        # if (o_loc_rob == 0 and act_rob == 1):
+        #     self.reward += 1
+        # # If robot knows its onion pred, the onion is on conv and decides to pick
+        # elif (pred_rob != 0 and o_loc_rob == 1 and act_rob == 2):
+        #     self.reward += 1
+        # # If robot has a bad onion pred, onion has been picked and decides to place in bin
+        # elif (pred_rob == 1 and o_loc_rob == 3 and act_rob == 5):
+        #     self.reward += 1
+        # # If robot has a good onion pred, onion has been picked and decides to inspect
+        # elif (pred_rob == 2 and o_loc_rob == 3 and act_rob == 3):
+        #     self.reward += 1
+        # # If robot has a bad onion pred, onion has been picked and decides to place on conveyor
+        # elif (pred_rob == 1 and o_loc_rob == 3 and act_rob == 4):
+        #     self.reward -= 1
+        # # If robot has a good onion pred, onion has been picked and decides to place in bin
+        # elif (pred_rob == 2 and o_loc_rob == 3 and act_rob == 5):
+        #     self.reward -= 1
+        # # If robot has a bad onion pred, onion has been picked and decides to inspect
+        # elif (pred_rob == 1 and o_loc_rob == 3 and act_rob == 3):
+        #     self.reward -= 1
+        # # If robot has inspected and found a good onion pred, and decides to place on conv
+        # elif (pred_rob == 2 and o_loc_rob == 2 and act_rob == 4):
+        #     self.reward += 1
+        # # If robot has inspected and found a bad onion pred, and decides to place in bin
+        # elif (pred_rob == 1 and o_loc_rob == 2 and act_rob == 5):
+        #     self.reward += 1
+
         # Bad - PlaceinBin
         if pred_rob == 1 and act_rob == 5:
             self.reward += 1
@@ -142,6 +171,35 @@ class DecHuRoSorting(gym.Env):
             self.reward -= 1
 
         ##################### Human #########################
+
+        # # If human doesn't know its onion loc, and decide to do detect
+        # if (o_loc_hum == 0 and act_hum == 1):
+        #     self.reward += 1
+        # # If human knows its onion pred, the onion is on conv and decides to pick
+        # elif (pred_hum != 0 and o_loc_hum == 1 and act_hum == 2):
+        #     self.reward += 1
+        # # If human has a bad onion pred, onion has been picked and decides to place in bin
+        # elif (pred_hum == 1 and o_loc_hum == 3 and act_hum == 5):
+        #     self.reward += 1
+        # # If human has a good onion pred, onion has been picked and decides to inspect
+        # elif (pred_hum == 2 and o_loc_hum == 3 and act_hum == 3):
+        #     self.reward += 1
+        # # If human has a bad onion pred, onion has been picked and decides to place on conveyor
+        # elif (pred_hum == 1 and o_loc_hum == 3 and act_hum == 4):
+        #     self.reward -= 1
+        # # If human has a good onion pred, onion has been picked and decides to place in bin
+        # elif (pred_hum == 2 and o_loc_hum == 3 and act_hum == 5):
+        #     self.reward -= 1
+        # # If human has a bad onion pred, onion has been picked and decides to inspect
+        # elif (pred_hum == 1 and o_loc_hum == 3 and act_hum == 3):
+        #     self.reward -= 1
+        # # If human has inspected and found a good onion pred, and decides to place on conv
+        # elif (pred_hum == 2 and o_loc_hum == 2 and act_hum == 4):
+        #     self.reward += 1
+        # # If human has inspected and found a bad onion pred, and decides to place in bin
+        # elif (pred_hum == 1 and o_loc_hum == 2 and act_hum == 5):
+        #     self.reward += 1
+
         # Bad - PlaceinBin
         if pred_hum == 1 and act_hum == 5:
             self.reward += 1
@@ -232,19 +290,19 @@ class DecHuRoSorting(gym.Env):
         '''
         @brief - Performs given actions and returns one_hot(joint next obsvs), reward and done
         '''
-        agents_action = np.zeros(2)
-        agents_action[0] = np.argmax(agents_actions[0])
-        agents_action[1] = np.argmax(agents_actions[1])
+        # agents_action = np.zeros(2)
+        # agents_action[0] = np.argmax(agents_actions[0])
+        # agents_action[1] = np.argmax(agents_actions[1])
         # agents_action[0] = np.random.choice(np.arange(self.nAAgent), p = self.softmax(agents_actions[0]))
         # agents_action[1] = np.random.choice(np.arange(self.nAAgent), p = self.softmax(agents_actions[1]))
-        assert len(agents_action) == self.n_agents, 'Num actions != num agents.'
+        assert len(agents_actions) == self.n_agents, 'Num actions != num agents.'
         self._step_count += 1
         self.reward = self.step_cost
 
         # print("...")
 
         nxt_s = {}
-        for agent_i, action in enumerate(agents_action):
+        for agent_i, action in enumerate(agents_actions):
             o_loc, eef_loc, pred = self.sid2vals(self.prev_obsv[agent_i])
             if self.isValidState(o_loc, eef_loc, pred):
                 if self.isValidAction(o_loc, eef_loc, pred, action):
@@ -271,7 +329,7 @@ class DecHuRoSorting(gym.Env):
                 self._agent_dones = [True, True]
                 raise ValueError
 
-        self.get_reward(agents_action)
+        self.get_reward(agents_actions)
 
         onion_loc_rob = np.zeros(4)
         onion_loc_rob[nxt_s[0][0]] = 1
@@ -297,7 +355,7 @@ class DecHuRoSorting(gym.Env):
             o_loc_0, eef_loc_0, pred_0 = self.sid2vals(self.prev_obsv[0])
             o_loc_1, eef_loc_1, pred_1 = self.sid2vals(self.prev_obsv[1])
             print(f'Step {self._step_count}: Agent 0 state: {self.get_state_meanings(o_loc_0, eef_loc_0, pred_0)} | Agent 1 state: {self.get_state_meanings(o_loc_1, eef_loc_1, pred_1)}')
-            print(f'Step {self._step_count}: Agent 0 action: {self.get_action_meanings(agents_action[0])} | Agent 1 action: {self.get_action_meanings(agents_action[1])}')
+            print(f'Step {self._step_count}: Agent 0 action: {self.get_action_meanings(agents_actions[0])} | Agent 1 action: {self.get_action_meanings(agents_actions[1])}')
             print(f'Step {self._step_count}: Agents reward: {self.reward} | Agents dones: {self._agent_dones}\n')
         
         if self._step_count >= self._max_episode_steps:

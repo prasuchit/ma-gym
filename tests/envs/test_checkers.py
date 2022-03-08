@@ -74,13 +74,13 @@ def test_step(env, action_n, output):
 
 
 def test_reset_after_episode_end(env):
-    env.reset()
+    obs = env.reset()
     done = [False for _ in range(env.n_agents)]
     step_i = 0
     ep_reward = [0 for _ in range(env.n_agents)]
     while not all(done):
         step_i += 1
-        _, reward_n, done, _ = env.step(env.action_space.sample())
+        obs, reward_n, done, _ = env.step(env.action_space.sample())
         for i in range(env.n_agents):
             ep_reward[i] += reward_n[i]
 
@@ -158,3 +158,8 @@ def test_revisit_fruit_cell(env):
         obs_3, reward_3, done, _ = env.step([1, 1])
 
         assert reward_1 != reward_3
+
+
+if __name__ == "__main__":
+    env = gym.make(id="ma_gym:Checkers-v0")
+    test_reset_after_episode_end(env)

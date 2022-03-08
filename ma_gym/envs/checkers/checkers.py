@@ -43,6 +43,8 @@ class Checkers(gym.Env):
             self._obs_low = np.tile(self._obs_low, self.n_agents)
         self.observation_space = MultiAgentObservationSpace([spaces.Box(self._obs_low, self._obs_high)
                                                              for _ in range(self.n_agents)])
+        self.share_observation_space = [spaces.Box(
+            low=-np.inf, high=+np.inf, shape=(len(self._obs_high) * self.n_agents,), dtype=np.float32) for _ in range(self.n_agents)]
 
         self.init_agent_pos = {0: [0, self._grid_shape[1] - 2], 1: [2, self._grid_shape[1] - 2]}
         self.agent_reward = {0: {'lemon': -10, 'apple': 10},
@@ -214,7 +216,8 @@ class Checkers(gym.Env):
             self.steps_beyond_done += 1
             rewards = [0 for _ in range(self.n_agents)]
 
-        return self.get_agent_obs(), rewards, self._agent_dones, {'food_count': self._food_count}
+        return self.get_agent_obs(), rewards, self._agent_dones, {'food_count': self._food_count, 0:{}, 1:{}}
+        # return self.get_agent_obs(), rewards, self._agent_dones, {'food_count': self._food_count}
 
     def render(self, mode='human'):
         for agent_i in range(self.n_agents):
