@@ -1,1 +1,1 @@
-from .huro_sorting_v1 import HuRoSortingv1
+from .huro_sorting_v1 import HuRoSorting

@@ -59,15 +59,12 @@ register(
 
 register(
     id='HuRoSorting-v0',
-    entry_point='ma_gym.envs.huro_sorting:HuRoSorting',
-    kwargs = {
-        'custom': True
-    }
+    entry_point='ma_gym.envs.huro_sorting:HuRoSorting'
 )
 
 register(
     id='HuRoSorting-v1',
-    entry_point='ma_gym.envs.huro_sorting_v1:HuRoSortingv1'
+    entry_point='ma_gym.envs.huro_sortingv1:HuRoSorting'
 )
 
 register(

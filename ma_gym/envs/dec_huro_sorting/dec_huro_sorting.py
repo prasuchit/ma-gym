@@ -154,19 +154,15 @@ class DecHuRoSorting(gym.Env):
         # elif (pred_rob == 1 and o_loc_rob == 2 and act_rob == 5):
         #     self.reward += 1
 
-        # Bad - PlaceinBin
         if pred_rob == 1 and act_rob == 5:
             self.reward += 1
-        # Good - Placeonconv
         elif pred_rob == 2 and act_rob == 4:
             self.reward += 1
-        # Currently picked, found good, inspect
+        # Currently picked, find good, inspect
         elif o_loc_rob == 3 and pred_rob == 2 and act_rob == 3:
-            self.reward += 1
-        # Bad - Placeonconv
+            self.reward += 1 
         elif pred_rob == 1 and act_rob == 4:
             self.reward -= 1
-        # Good - PlaceinBin
         elif pred_rob == 2 and act_rob == 5:
             self.reward -= 1
 
@@ -200,19 +196,14 @@ class DecHuRoSorting(gym.Env):
         # elif (pred_hum == 1 and o_loc_hum == 2 and act_hum == 5):
         #     self.reward += 1
 
-        # Bad - PlaceinBin
         if pred_hum == 1 and act_hum == 5:
             self.reward += 1
-        # Good - Placeonconv
         elif pred_hum == 2 and act_hum == 4:
             self.reward += 1
-        # Currently picked, found good, inspect
         elif o_loc_hum == 3 and pred_hum == 2 and act_hum == 3:
             self.reward += 1
-        # Bad - Placeonconv
         elif pred_hum == 1 and act_hum == 4:
             self.reward -= 1
-        # Good - PlaceinBin
         elif pred_hum == 2 and act_hum == 5:
             self.reward -= 1
 
@@ -220,10 +211,10 @@ class DecHuRoSorting(gym.Env):
         ######## DEPENDENT FEATURES ########
 
         # If both agents have inspected and decided onion is good, and robot doesn't wait for human to place first
-        if (o_loc_rob != 1 and o_loc_hum != 1 and pred_rob == pred_hum == 2 and act_hum != 4 and act_rob != 0):
+        if (o_loc_rob != 1 and o_loc_hum != 1 and pred_rob == pred_hum == 2 and (act_hum != 4 or act_rob != 0)):
             self.reward -= 3
         # If both agents don't know onion loc and robot doesn't wait for human to choose first
-        if (o_loc_hum == o_loc_rob == 0 and act_hum != 1 and act_rob != 0):
+        if (o_loc_hum == o_loc_rob == 0 and (act_hum != 1 or act_rob != 0)):
             self.reward -= 3
 
     def get_init_obs(self):
