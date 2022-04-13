@@ -3,6 +3,7 @@ import logging
 from multiprocessing.sharedctypes import Value
 import numpy as np
 from operator import mod
+import random
 
 import gym
 import numpy as np
@@ -298,9 +299,9 @@ class HuRoSorting(gym.Env):
         # s_r = int(np.squeeze(np.where(sample_r == 1)))
         # s_h = int(np.squeeze(np.where(sample_h == 1)))
         # return s_r, s_h
-        np.random.seed(int(time()))
-        sample_r = np.random.choice(np.arange(self.nSAgent), p=np.reshape(self.start[0], (self.nSAgent)))
-        sample_h = np.random.choice(np.arange(self.nSAgent), p=np.reshape(self.start[1], (self.nSAgent)))
+        random.seed(time())
+        sample_r = random.choices(np.arange(self.nSAgent), weights=np.reshape(self.start[0], (self.nSAgent)), k=1)[0]
+        sample_h = random.choices(np.arange(self.nSAgent), weights=np.reshape(self.start[1], (self.nSAgent)), k=1)[0]
         return sample_r, sample_h
     
 
@@ -412,6 +413,7 @@ class HuRoSorting(gym.Env):
         Predictions = {0:  'Unknown', 1: 'Bad', 2: 'Good}
         Actions: {0: 'Noop', 1: 'Detect', 2: 'Pick', 3: 'Inspect', 4: 'PlaceOnConveyor', 5: 'PlaceInBin}
         '''
+        random.seed(time())
         if a == 0:
             ''' Noop '''
             return [onionLoc, eefLoc, pred].copy()
@@ -423,8 +425,8 @@ class HuRoSorting(gym.Env):
                     that takes the transition to an invalid state.'''
             prob = [0.4, 0.6]
             n_states = [[1, 3, 1], [1, 3, 2]]
-            choice_index = np.random.choice(len(n_states), p=prob)
-            return n_states[choice_index].copy()
+            choice = random.choices(n_states, weights=prob, k=1)[0]
+            return choice
         elif a == 2:
             ''' Pick '''
             return [3, 3, pred]
@@ -435,8 +437,8 @@ class HuRoSorting(gym.Env):
             else:   # If initial pred is good, it'll change more often
                 prob = [0.3, 0.7]
             n_states = [[2, 2, 1], [2, 2, 2]]
-            choice_index = np.random.choice(len(n_states), p=prob)
-            return n_states[choice_index].copy()
+            choice = random.choices(n_states, weights=prob, k=1)[0]
+            return choice
         elif a == 4:
             ''' PlaceOnConv '''
             return [0, 1, 0]
