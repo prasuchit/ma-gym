@@ -108,8 +108,8 @@ class HuRoSorting(gym.Env):
         self.start = np.zeros((self.n_agents, self.nSAgent))
         self.prev_obsv = [None]*self.n_agents
         self.action_space = spaces.Discrete(self.nAAgent)
-        self._obs_high = np.ones(22)
-        self._obs_low = np.zeros(22)
+        self._obs_high = np.ones(24)
+        self._obs_low = np.zeros(24)
         self.observation_space = spaces.Box(self._obs_low, self._obs_high)
         self.step_cost = 0.0
         self.reward = self.step_cost
@@ -187,7 +187,40 @@ class HuRoSorting(gym.Env):
         self._agent_dones = False
         self.steps_beyond_done = None
 
-        return self.get_init_obs(fixed_init)
+        return self.check_interaction(self.get_init_obs(fixed_init))
+
+    def failure_reset(self, fixed_init = False):
+        random.seed(time())
+        self._step_count = 0
+        self.reward = self.step_cost
+        self._agent_dones = False
+        self.steps_beyond_done = None
+        if fixed_init:
+            state = [[0,3,0],[0,3,0]]
+        else:
+            state = random.choice([[[2,2,2],[2,2,2]],
+                    [[3,3,2],[3,3,2]],
+                    [[1,random.choice([0,2,3]),random.choice([1,2])],
+                    [1,random.choice([0,2,3]),random.choice([1,2])]],
+                    [[0,random.choice([0,2,3]),0],[0,random.choice([0,2,3]),0]]])
+        self.set_prev_obsv(0, self.vals2sid(state[0]))
+        self.set_prev_obsv(1, self.vals2sid(state[1]))
+        return self.check_interaction(self.get_global_onehot(state))
+    
+    def check_interaction(self, onehotglobalstate):
+        interaction = 0
+        robot_onehot = onehotglobalstate[:11]
+        human_onehot = onehotglobalstate[11:]
+        oloc_r, eefloc_r, pred_r = np.argmax(robot_onehot[:4]), np.argmax(robot_onehot[4:8]), np.argmax(robot_onehot[8:])
+        oloc_h, eefloc_h, pred_h = np.argmax(human_onehot[:4]), np.argmax(human_onehot[4:8]), np.argmax(human_onehot[8:])
+        if oloc_r == oloc_h == pred_r == pred_h == 2:   # Both oloc infront, pred good  - Placeonconv
+            interaction = 1
+        if oloc_r == oloc_h == pred_r == pred_h == 0:   # Both oloc and pred unknown    - Detect
+            interaction = 1
+        if oloc_r == oloc_h == 1 and (pred_r != 0 and pred_h != 0):  # Both oloc onconv, pred known - Pick
+            interaction = 1
+        return np.concatenate([robot_onehot, [interaction], human_onehot, [interaction]])
+        # return np.append(onehotglobalstate, interaction)
 
 
     def step(self, agents_action, verbose=0):
@@ -223,7 +256,7 @@ class HuRoSorting(gym.Env):
 
                     one_hot_state = np.concatenate([self.get_invalid_state()] * self.n_agents)
                    
-                    return one_hot_state, self.reward, self._agent_dones, {}
+                    return self.check_interaction(one_hot_state), self.reward, self._agent_dones, {}
             else:
                 if verbose:
                     logger.error(f"Step {self._step_count}: Invalid current state {self.get_state_meanings(o_loc, eef_loc, pred)} for agent {agent_i}, ending episode!")
@@ -256,7 +289,7 @@ class HuRoSorting(gym.Env):
             self.steps_beyond_done += 1
             self.reward = 0
 
-        return one_hot_state, self.reward, self._agent_dones, {}
+        return self.check_interaction(one_hot_state), self.reward, self._agent_dones, {}
 
     def get_global_onehot(self, X):
         '''
