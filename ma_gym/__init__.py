@@ -63,11 +63,6 @@ register(
 )
 
 register(
-    id='HuRoSorting-v1',
-    entry_point='ma_gym.envs.huro_sortingv1:HuRoSorting'
-)
-
-register(
     id='DecHuRoSorting-v0',
     entry_point='ma_gym.envs.dec_huro_sorting:DecHuRoSorting'
 )

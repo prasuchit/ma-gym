@@ -108,7 +108,7 @@ class Checkers(gym.Env):
             _agent_i_obs = [round(pos[0] / self._grid_shape[0], 2),
                             round(pos[1] / (self._grid_shape[1] - 1), 2)]
 
-            # add 3 x3 mask around the agent current location and share neighbours
+            # add 3 x 3 mask around the agent current location and share neighbours
             # ( in practice: this information may not be so critical since the map never changes)
             _agent_i_neighbour = np.zeros((3, 3, 5))
             for r in range(pos[0] - 1, pos[0] + 2):
