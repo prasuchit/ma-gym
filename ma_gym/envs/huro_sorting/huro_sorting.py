@@ -91,9 +91,10 @@ class HuRoSorting(gym.Env):
 
     metadata = {'render.modes': ['human', 'rgb_array']}
 
-    def __init__(self, full_observable=True, max_steps=100):
+    def __init__(self, full_observable=True, max_steps=100, add_interac_flag=True):
 
         global ACTION_MEANING, ONIONLOC, EEFLOC, PREDICTIONS, AGENT_MEANING
+        self.add_interac_flag = add_interac_flag
         self.n_agents = len(AGENT_MEANING)
         self._max_episode_steps = max_steps
         self._step_count = None
@@ -186,8 +187,10 @@ class HuRoSorting(gym.Env):
 
         self._agent_dones = False
         self.steps_beyond_done = None
-
-        return self.check_interaction(self.get_init_obs(fixed_init))
+        if self.add_interac_flag:
+            return self.check_interaction(self.get_init_obs(fixed_init))
+        else:
+            return self.get_init_obs(fixed_init)
 
     def failure_reset(self, fixed_init = False):
         random.seed(time())
@@ -205,7 +208,10 @@ class HuRoSorting(gym.Env):
                     [[0,random.choice([0,2,3]),0],[0,random.choice([0,2,3]),0]]])
         self.set_prev_obsv(0, self.vals2sid(state[0]))
         self.set_prev_obsv(1, self.vals2sid(state[1]))
-        return self.check_interaction(self.get_global_onehot(state))
+        if self.add_interac_flag:
+            return self.check_interaction(self.get_global_onehot(state))
+        else:
+            return self.get_global_onehot(state)
     
     def check_interaction(self, onehotglobalstate):
         interaction = 0
@@ -255,8 +261,10 @@ class HuRoSorting(gym.Env):
                     ''' Sending all invalid actions to an impossible sink state'''
 
                     one_hot_state = np.concatenate([self.get_invalid_state()] * self.n_agents)
-                   
-                    return self.check_interaction(one_hot_state), self.reward, self._agent_dones, {}
+                    if self.add_interac_flag:
+                        return self.check_interaction(one_hot_state), self.reward, self._agent_dones, {}
+                    else:
+                        return one_hot_state, self.reward, self._agent_dones, {}
             else:
                 if verbose:
                     logger.error(f"Step {self._step_count}: Invalid current state {self.get_state_meanings(o_loc, eef_loc, pred)} for agent {agent_i}, ending episode!")
@@ -288,8 +296,10 @@ class HuRoSorting(gym.Env):
                     " steps are undefined behavior.")
             self.steps_beyond_done += 1
             self.reward = 0
-
-        return self.check_interaction(one_hot_state), self.reward, self._agent_dones, {}
+        if self.add_interac_flag:
+            return self.check_interaction(one_hot_state), self.reward, self._agent_dones, {}
+        else:
+            return one_hot_state, self.reward, self._agent_dones, {}
 
     def get_global_onehot(self, X):
         '''

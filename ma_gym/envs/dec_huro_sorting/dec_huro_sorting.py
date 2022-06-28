@@ -96,6 +96,7 @@ class DecHuRoSorting(gym.Env):
     def __init__(self, full_observable=False, max_steps=100):
 
         global ACTION_MEANING, ONIONLOC, EEFLOC, PREDICTIONS, AGENT_MEANING
+        self.name = 'DecHuRoSorting'
         self.n_agents = len(AGENT_MEANING)
         self._max_episode_steps = max_steps
         self._step_count = None
@@ -265,8 +266,8 @@ class DecHuRoSorting(gym.Env):
 
         self.get_reward(agents_action)
 
-        sid_rob = self.vals2sid(nxtS = nxt_s[0])
-        sid_hum = self.vals2sid(nxtS = nxt_s[1])
+        sid_rob = self.vals2sid(sVals = nxt_s[0])
+        sid_hum = self.vals2sid(sVals = nxt_s[1])
         self.set_prev_obsv(0, sid_rob)
         self.set_prev_obsv(1, sid_hum)
 
@@ -295,6 +296,7 @@ class DecHuRoSorting(gym.Env):
         '''
         @brief: Returns a global one hot state using local states.
         '''
+        # logger.warning(f"get_global_onehot: Currently this function does not account for the interaction flag used in step function. Make sure you add it before using it in the env.")
         one_hots = []
         for _, [onionloc, eefloc, pred] in enumerate(X):
             onion_loc = self.get_one_hot(onionloc, self.nOnionLoc)
@@ -310,7 +312,7 @@ class DecHuRoSorting(gym.Env):
     def get_init_obs(self, fixed_init=False):
         '''
         @brief - Samples from the start state distrib and returns a joint one hot obsv.
-        # '''
+        '''
         if fixed_init:
             s_r = s_h = self.vals2sid([0,3,0])
         else:
@@ -390,14 +392,57 @@ class DecHuRoSorting(gym.Env):
         predic = int(mod(sid, self.nPredict))
         return onionloc, eefloc, predic
 
-    def vals2sid(self, nxtS):
+    def vals2sid(self, sVals):
         '''
         @brief - Given the 3 variable values making up a state, this converts it into state id 
         '''
-        ol = nxtS[0]
-        eefl = nxtS[1]
-        pred = nxtS[2]
+        ol = sVals[0]
+        eefl = sVals[1]
+        pred = sVals[2]
         return (ol + self.nOnionLoc * (eefl + self.nEEFLoc * pred))
+    
+    def vals2sGlobal(self, oloc_r, eefloc_r, pred_r, oloc_h, eefloc_h, pred_h):
+        '''
+        @brief - Given the variable values making up a global state, this converts it into global state id 
+        '''
+        # logger.warning(f"vals2sGlobal: Currently this function does not take the interaction flag value as input. The global state id generated will not account for this.")
+        return (oloc_r + self.nOnionLoc * (eefloc_r + self.nEEFLoc * (pred_r + self.nPredict * (oloc_h + self.nOnionLoc * (eefloc_h + self.nEEFLoc * pred_h)))))
+
+    def vals2aGlobal(self, a_r, a_h):
+        '''
+        @brief - Given the individual agent actions, this converts it into action id 
+        '''
+        return a_r + self.nAAgent * a_h
+
+    def sGlobal2vals(self, s_global):
+        '''
+        @brief - Given the global state id, this converts it into the individual state variable values
+        '''
+        # logger.warning(f"sGlobal2vals: Currently this function does not account for the interaction flag used in step function. Make sure you add it before using it in the env.")
+
+        s_g = s_global
+        oloc_r = int(mod(s_g, self.nOnionLoc))
+        s_g = (s_g - oloc_r)/self.nOnionLoc
+        eefloc_r = int(mod(s_g, self.nEEFLoc))
+        s_g = (s_g - eefloc_r)/self.nEEFLoc
+        pred_r = int(mod(s_g, self.nPredict))
+        s_g = (s_g - pred_r)/self.nPredict
+        oloc_h = int(mod(s_g, self.nOnionLoc))
+        s_g = (s_g - oloc_h)/self.nOnionLoc
+        eefloc_h = int(mod(s_g, self.nEEFLoc))
+        s_g = (s_g - eefloc_h)/self.nEEFLoc
+        pred_h = int(mod(s_g, self.nPredict))
+        return oloc_r, eefloc_r, pred_r, oloc_h, eefloc_h, pred_h
+
+    def aGlobal2vals(self, a_global):
+        '''
+        @brief - Given the global action, this converts it into individual action ids
+        '''
+        a_g = a_global
+        a_r = int(mod(a_g, self.nAAgent))
+        a_g = (a_g - a_r)/self.nAAgent
+        a_h = int(mod(a_g, self.nAAgent))
+        return a_r, a_h
 
     def isValidAction(self, onionLoc, eefLoc, pred, action):
         '''
