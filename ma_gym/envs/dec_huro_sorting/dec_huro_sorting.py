@@ -108,7 +108,7 @@ class DecHuRoSorting(gym.Env):
         self.nPredict = len(PREDICTIONS)
         self.nSAgent = self.nOnionLoc*self.nEEFLoc*self.nPredict
         self.nAAgent = len(ACTION_MEANING)
-        self.nSGlobal = self.nSAgent**self.n_agents
+        self.nSGlobal = (self.nSAgent*2)**self.n_agents     # 2 for the boolean interaction flag
         self.nAGlobal = self.nAAgent**self.n_agents
         self.start = np.zeros((self.n_agents, self.nSAgent))
         self.prev_obsv = [None]*self.n_agents
@@ -401,12 +401,11 @@ class DecHuRoSorting(gym.Env):
         pred = sVals[2]
         return (ol + self.nOnionLoc * (eefl + self.nEEFLoc * pred))
     
-    def vals2sGlobal(self, oloc_r, eefloc_r, pred_r, oloc_h, eefloc_h, pred_h):
+    def vals2sGlobal(self, oloc_r, eefloc_r, pred_r, interact_r, oloc_h, eefloc_h, pred_h, interact_h):
         '''
         @brief - Given the variable values making up a global state, this converts it into global state id 
         '''
-        # logger.warning(f"vals2sGlobal: Currently this function does not take the interaction flag value as input. The global state id generated will not account for this.")
-        return (oloc_r + self.nOnionLoc * (eefloc_r + self.nEEFLoc * (pred_r + self.nPredict * (oloc_h + self.nOnionLoc * (eefloc_h + self.nEEFLoc * pred_h)))))
+        return (oloc_r + self.nOnionLoc * (eefloc_r + self.nEEFLoc * (pred_r + self.nPredict *(interact_r + 2 *(oloc_h + self.nOnionLoc * (eefloc_h + self.nEEFLoc * (pred_h + self.nPredict * interact_h)))))))
 
     def vals2aGlobal(self, a_r, a_h):
         '''
@@ -418,8 +417,6 @@ class DecHuRoSorting(gym.Env):
         '''
         @brief - Given the global state id, this converts it into the individual state variable values
         '''
-        # logger.warning(f"sGlobal2vals: Currently this function does not account for the interaction flag used in step function. Make sure you add it before using it in the env.")
-
         s_g = s_global
         oloc_r = int(mod(s_g, self.nOnionLoc))
         s_g = (s_g - oloc_r)/self.nOnionLoc
@@ -427,12 +424,16 @@ class DecHuRoSorting(gym.Env):
         s_g = (s_g - eefloc_r)/self.nEEFLoc
         pred_r = int(mod(s_g, self.nPredict))
         s_g = (s_g - pred_r)/self.nPredict
+        interact_r = int(mod(s_g, 2))
+        s_g = (s_g - interact_r)/2
         oloc_h = int(mod(s_g, self.nOnionLoc))
         s_g = (s_g - oloc_h)/self.nOnionLoc
         eefloc_h = int(mod(s_g, self.nEEFLoc))
         s_g = (s_g - eefloc_h)/self.nEEFLoc
         pred_h = int(mod(s_g, self.nPredict))
-        return oloc_r, eefloc_r, pred_r, oloc_h, eefloc_h, pred_h
+        s_g = (s_g - pred_h)/self.nPredict
+        interact_h = int(mod(s_g, 2))
+        return oloc_r, eefloc_r, pred_r, interact_r, oloc_h, eefloc_h, pred_h, interact_h
 
     def aGlobal2vals(self, a_global):
         '''
@@ -472,7 +473,7 @@ class DecHuRoSorting(gym.Env):
     def findNxtState(self, onionLoc, eefLoc, pred, a):
         ''' 
         @brief - Returns the valid nextstates. 
-        NOTE: @TBD make transition stochastic.
+        NOTE: @TBD make transition more stochastic.
         This function assumes that you're doing the action from the appropriate current state.
         eg: If (onionloc - unknown, eefloc - onconv, pred - unknown), that's still a valid
         current state but an inappropriate state to perform inspect action and you shouldn't
