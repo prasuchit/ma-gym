@@ -108,13 +108,13 @@ class DecHuRoSorting(gym.Env):
         self.nPredict = len(PREDICTIONS)
         self.nSAgent = self.nOnionLoc*self.nEEFLoc*self.nPredict
         self.nAAgent = len(ACTION_MEANING)
-        self.nSGlobal = (self.nSAgent*2)**self.n_agents     # 2 for the boolean interaction flag
+        self.nSGlobal = (self.nSAgent*2)**self.n_agents     # *2 for the boolean interaction flag
         self.nAGlobal = self.nAAgent**self.n_agents
         self.start = np.zeros((self.n_agents, self.nSAgent))
         self.prev_obsv = [None]*self.n_agents
         self.action_space = MultiAgentActionSpace([spaces.Discrete(self.nAAgent) for _ in range(self.n_agents)])
-        self._obs_high = np.ones(self.nOnionLoc+self.nEEFLoc+self.nPredict+1)
-        self._obs_low = np.zeros(self.nOnionLoc+self.nEEFLoc+self.nPredict+1)
+        self._obs_high = np.ones(self.nOnionLoc+self.nEEFLoc+self.nPredict+1)   # +1 for interaction flag
+        self._obs_low = np.zeros(self.nOnionLoc+self.nEEFLoc+self.nPredict+1)   # +1 for interaction flag
         self.observation_space = MultiAgentObservationSpace([spaces.Box(self._obs_low, self._obs_high)
                                                              for _ in range(self.n_agents)])
         self.step_cost = 0.0

@@ -91,7 +91,7 @@ class HuRoSorting(gym.Env):
 
     metadata = {'render.modes': ['human', 'rgb_array']}
 
-    def __init__(self, full_observable=True, max_steps=100, add_interac_flag=True):
+    def __init__(self, full_observable=True, max_steps=100, add_interac_flag=False):
 
         global ACTION_MEANING, ONIONLOC, EEFLOC, PREDICTIONS, AGENT_MEANING
         self.add_interac_flag = add_interac_flag
@@ -109,8 +109,9 @@ class HuRoSorting(gym.Env):
         self.start = np.zeros((self.n_agents, self.nSAgent))
         self.prev_obsv = [None]*self.n_agents
         self.action_space = spaces.Discrete(self.nAAgent)
-        self._obs_high = np.ones(24)
-        self._obs_low = np.zeros(24)
+        self._obs_len = (self.nOnionLoc+self.nEEFLoc+self.nPredict)* self.n_agents
+        self._obs_high = np.ones(self._obs_len)
+        self._obs_low = np.zeros(self._obs_len)
         self.observation_space = spaces.Box(self._obs_low, self._obs_high)
         self.step_cost = 0.0
         self.reward = self.step_cost
@@ -233,8 +234,8 @@ class HuRoSorting(gym.Env):
         '''
         @brief - Performs given actions and returns one_hot(joint next obsvs), reward and done
         '''
-        # agents_action = (agents_action_id // self.nAAgent,    # Currently PPO returns 1 action mapped to all agents.
-        #                 agents_action_id % self.nAAgent)     # Here we're splitting it up to each agent action.
+        # agents_action = (agents_action_id // self.nAAgent,    # If PPO returns 1 action mapped to all agents.
+        #                 agents_action_id % self.nAAgent)     # Here we can split it up to each agent action.
            
         agents_action = np.squeeze(agents_action)
         assert len(agents_action) == self.n_agents, 'Num actions != num agents.'
