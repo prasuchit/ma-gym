@@ -108,7 +108,8 @@ class DecHuRoSorting(gym.Env):
         self.nPredict = len(PREDICTIONS)
         self.nSAgent = self.nOnionLoc*self.nEEFLoc*self.nPredict
         self.nAAgent = len(ACTION_MEANING)
-        self.nSGlobal = (self.nSAgent*2)**self.n_agents     # *2 for the boolean interaction flag
+        self.nInteract = 2
+        self.nSGlobal = (self.nSAgent*self.nInteract)**self.n_agents
         self.nAGlobal = self.nAAgent**self.n_agents
         self.start = np.zeros((self.n_agents, self.nSAgent))
         self.prev_obsv = [None]*self.n_agents
@@ -391,6 +392,20 @@ class DecHuRoSorting(gym.Env):
         sid = (sid - eefloc)/self.nEEFLoc
         predic = int(mod(sid, self.nPredict))
         return onionloc, eefloc, predic
+    
+    def sid2vals_interact(self, s):
+        '''
+        @brief - Given state id, this func converts it to the 4 variable values. 
+        '''
+        sid = s
+        onionloc = int(mod(sid, self.nOnionLoc))
+        sid = (sid - onionloc)/self.nOnionLoc
+        eefloc = int(mod(sid, self.nEEFLoc))
+        sid = (sid - eefloc)/self.nEEFLoc
+        predic = int(mod(sid, self.nPredict))
+        sid = (sid - predic)/self.nPredict
+        interact = int(mod(sid, self.nInteract))
+        return onionloc, eefloc, predic, interact
 
     def vals2sid(self, sVals):
         '''
@@ -400,6 +415,16 @@ class DecHuRoSorting(gym.Env):
         eefl = sVals[1]
         pred = sVals[2]
         return (ol + self.nOnionLoc * (eefl + self.nEEFLoc * pred))
+    
+    def vals2sid_interact(self, sVals):
+        '''
+        @brief - Given the 4 variable values making up a state, this converts it into state id 
+        '''
+        ol = sVals[0]
+        eefl = sVals[1]
+        pred = sVals[2]
+        interact = sVals[3]
+        return (ol + self.nOnionLoc * (eefl + self.nEEFLoc * (pred + self.nPredict * interact)))
     
     def vals2sGlobal(self, oloc_r, eefloc_r, pred_r, interact_r, oloc_h, eefloc_h, pred_h, interact_h):
         '''
