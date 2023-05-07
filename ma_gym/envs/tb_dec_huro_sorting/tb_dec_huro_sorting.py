@@ -24,6 +24,11 @@ AGENT_MEANING = {
     1: 'Human'
 }
 
+AGENT_TYPE = {
+    0: 'Non-Fatigued',
+    1: 'Fatigued'
+}
+
 ONIONLOC = {
     0: 'Unknown',
     1: 'OnConveyor',
@@ -45,40 +50,43 @@ PREDICTIONS = {
 
 ACTION_MEANING = {
     0: 'Noop',
-    1: 'Detect',
-    2: 'Pick',
-    3: 'Inspect',
-    4: 'PlaceOnConveyor',
-    5: 'PlaceinBin'
+    1: 'Detect_any',
+    2: 'Detect_good',
+    3: 'Pick',
+    4: 'Inspect',
+    5: 'PlaceOnConveyor',
+    6: 'PlaceinBin'
 }
 
-class DecHuRoSorting(gym.Env):
+class TBDecHuRoSorting(gym.Env):
     """
-    This environment is a slightly modified version of sorting env in this paper: MMAP-BIRL(https://arxiv.org/pdf/2109.07788.pdf).
+    This environment is a slightly modified version of sorting env in this paper: Dec-AIRL(.pdf).
     This is a multi-agent sparse interactions Dec-MDP with 2 agents - a Human and a Robot. The Human agent is always given preference 
     while sorting and allowed to choose if there's a conflict. The Robot performs an independent sort while accounting for the Human's 
     local state and action. In order to learn this behavior, the Robot observes two Humans do the sort as a team where one of them 
     assume the role of the Robot.
     ------------------------------------------------------------------------------------------------------------------------
-    Global state S - (s_rob, s_hum)
+    Global state S - (s_rob, s_hum) x (type_rob, type_hum)
     Global action A - (a_rob, a_hum)
     Transitions T = Pr(S' | S, a_rob, a_hum)
     Joint Reward R(S,A) - Common reward that both agents get.
     Boolean variable eta - 1 if S is interactive state else 0.
-    R(S,A) = eta*R_int + (1-eta)*R_non_int
+    R(S,A) = eta*R_int + (1-eta)*R_non_int ; where R_int and R_non_int are reward for interaction and non-interaction cases.
     ------------------------------------------------------------------------------------------------------------------------
     State and action space are the same for both agents. 'agent' subscript below could mean either robot/human. 
     s_agent - (Onion_location, End_eff_loc, Onion_prediction)
-    a_agent - (Noop, Detect, Pick, Inspect, PlaceOnConveyor, PlaceInBin)
+    a_agent - (Noop, Detect_any, Detect_good, Pick, Inspect, PlaceOnConveyor, PlaceInBin)
     ------------------------------------------------------------------------------------------------------------------------
-    Onion_location - Describes where the onion in focus currently is - (Unknown, OnConveyor, AtHome, InFront)
-    End_eff_loc - Describes where the end effector currently is - (OnConveyor, AtHome, InFront, AtBin)
-    Prediction - Provides the classification of the onion in focus - (Unknown, Good, Bad)
+    Onion_location - Describes where the onion in focus currently is - (Unknown, OnConveyor, AtHome, InFront).
+    End_eff_loc - Describes where the end effector currently is - (OnConveyor, AtHome, InFront, AtBin).
+    Prediction - Provides the classification of the onion in focus - (Unknown, Good, Bad).
+    Interaction - Boolean variable to say if agents are in interaction or not.
     NOTE: Onion location turns unknown when it's successfully placed on conv or in bin; 
     Until detect is done, both Prediction and Onion_location remain unknown.
     -------------------------------------------------------------------------------------------------------------------------
-    Detect - Uses a classifier NN and CV techniques to find location and class of onion - (Onion_location, Initial_Prediction)
-    Pick - Dips down, grabs the onion and comes back up - (Onion_location: AtHome, End_eff_loc: AtHome)
+    Detect_any - Uses a classifier NN and CV techniques to find location and class of any onion - (Onion_location, Initial_Prediction)
+    Detect_good - Same as Detect_any but only chooses a good onion as onion in focus.
+    Pick - Dips down, grabs the onion in focus and comes back up - (Onion_location: AtHome, End_eff_loc: AtHome)
     PlaceInBin - If Initial_Prediction is bad, the onion is directly placed in the bad bin - (Onion_location: Unknown, End_eff_loc: AtBin). 
     Inspect - If Initial_Prediction is good, we need to inspect again to make sure, onion is shown close to camera - (Onion_location: InFront, End_eff_loc: InFront). 
     PlaceOnConveyor - If Prediction turns out to be good, it's placed back on the conveyor and liftup - (Onion_location: Unknown, End_eff_loc: OnConv).
@@ -96,17 +104,18 @@ class DecHuRoSorting(gym.Env):
 
     def __init__(self, full_observable=False, max_steps=100):
 
-        global ACTION_MEANING, ONIONLOC, EEFLOC, PREDICTIONS, AGENT_MEANING
-        self.name = 'DecHuRoSorting'
+        global ACTION_MEANING, ONIONLOC, EEFLOC, PREDICTIONS, AGENT_MEANING, AGENT_TYPE
+        self.name = 'TBDecHuRoSorting'
         self.n_agents = len(AGENT_MEANING)
         self._max_episode_steps = max_steps
         self._step_count = None
         self.full_observable = full_observable
-        assert not self.full_observable, "Decentralized agents can't have a fully observable global state! \
-                                            Try HuRoSorting-v0 env if you're looking for a Multiagent MDP."
+        assert not self.full_observable, "This is a Type-Based Decentralized MDP with local full observability! \
+                                            Try HuRoSorting-v0 env if you're looking for fully observable multi-agent MDP."
         self.nOnionLoc = len(ONIONLOC)
         self.nEEFLoc = len(EEFLOC)
         self.nPredict = len(PREDICTIONS)
+        self.nAgent_type = len(AGENT_TYPE)
         self.nInteract = 2
         self.nSAgent = self.nOnionLoc*self.nEEFLoc*self.nPredict*self.nInteract
         self.nAAgent = len(ACTION_MEANING)
@@ -114,9 +123,13 @@ class DecHuRoSorting(gym.Env):
         self.nAGlobal = self.nAAgent**self.n_agents
         self.start = np.zeros((self.n_agents, self.nSAgent))
         self.prev_obsv = [None]*self.n_agents
+        self.prev_agent_type = [None]*self.n_agents
+        self.true_label = [None]*self.n_agents
+        random.seed(time())
+        self.onions_batch = [random.choice([1, 2]) for _ in range(100)] # 1 - Blemished onion, 2 - Unblemished onion.
         self.action_space = MultiAgentActionSpace([spaces.Discrete(self.nAAgent) for _ in range(self.n_agents)])
-        self._obs_high = np.ones(self.nOnionLoc+self.nEEFLoc+self.nPredict+self.nInteract)  
-        self._obs_low = np.zeros(self.nOnionLoc+self.nEEFLoc+self.nPredict+self.nInteract) 
+        self._obs_high = np.ones(self.nOnionLoc+self.nEEFLoc+self.nPredict+self.nInteract+self.nAgent_type)  
+        self._obs_low = np.zeros(self.nOnionLoc+self.nEEFLoc+self.nPredict+self.nInteract+self.nAgent_type) 
         self.observation_space = MultiAgentObservationSpace([spaces.Box(self._obs_low, self._obs_high)
                                                              for _ in range(self.n_agents)])
         self.step_cost = 0.0
@@ -126,48 +139,68 @@ class DecHuRoSorting(gym.Env):
         self.steps_beyond_done = None
         self.seed()
 
-    def get_reward(self, acts):
+    def _get_reward(self, acts):
         '''
         @brief Provides joint reward for appropriate team behavior.
         '''
         [o_loc_rob, eef_loc_rob, pred_rob, inter_rob] = self.sid2vals_interact(self.prev_obsv[0])
         [o_loc_hum, eef_loc_hum, pred_hum, inter_hum] = self.sid2vals_interact(self.prev_obsv[1])
+        
         act_rob = acts[0]
         act_hum = acts[1]
+        
+        true_pred_rob = self.true_label[0]
+        true_pred_hum = self.true_label[1]        
+        
+        rob_type = self.prev_agent_type[0]
+        hum_type = self.prev_agent_type[1]
+        
+        ''' NOTE: We've modified the prev reward func here to check for
+        true label instead of detected label and for unblemished onion, 
+        we assume detected label is wrong 50% time. Inspect reveals the true label.'''
+        
         ######## INDEPENDENT FEATURES ########
 
         ##################### Robot #########################
-        # Bad onion place in bin
-        if pred_rob == 1 and act_rob == 5:
-            self.reward += 1
-        # Good onion place on conv
-        elif pred_rob == 2 and act_rob == 4:
-            self.reward += 1
-        # Currently picked, find good, inspect
-        elif o_loc_rob == 3 and pred_rob == 2 and act_rob == 3:
-            self.reward += 1 
-        # Bad onion place on conv
-        elif pred_rob == 1 and act_rob == 4:
-            self.reward -= 1
-        # Good onion place in bin
-        elif pred_rob == 2 and act_rob == 5:
-            self.reward -= 1
+        if rob_type == 0:
+            
+            # Bad onion place in bin
+            if true_pred_rob == 1 and act_rob == 5:
+                self.reward += 1
+            # Good onion place on conv
+            elif true_pred_rob == 2 and act_rob == 4:
+                self.reward += 1
+                
+            # # Currently picked, find good, inspect
+            # elif o_loc_rob == 3 and pred_rob == 2 and act_rob == 3:
+            #     self.reward += 1 
+            
+            # Bad onion place on conv
+            elif true_pred_rob == 1 and act_rob == 4:
+                self.reward -= 1
+            # Good onion place in bin
+            elif true_pred_rob == 2 and act_rob == 5:
+                self.reward -= 1
+        else:
+            raise ValueError(f'Robot cannot be {AGENT_TYPE[rob_type]}.')
 
         ##################### Human #########################
-        # Bad onion place in bin
-        if pred_hum == 1 and act_hum == 5:
+            # Bad onion place in bin
+        if true_pred_hum == 1 and act_hum == 5:
             self.reward += 1
         # Good onion place on conv
-        elif pred_hum == 2 and act_hum == 4:
+        elif true_pred_hum == 2 and act_hum == 4:
             self.reward += 1
-        # Currently picked, find good, inspect
-        elif o_loc_hum == 3 and pred_hum == 2 and act_hum == 3:
-            self.reward += 1
+            
+        # # Unfatigued human, currently picked, find good, inspect
+        # elif hum_type == 0 and o_loc_hum == 3 and pred_hum == 2 and act_hum == 3:
+        #     self.reward += 1
+        
         # Bad onion place on conv
-        elif pred_hum == 1 and act_hum == 4:
+        elif true_pred_hum == 1 and act_hum == 4:
             self.reward -= 1
         # Good onion place in bin
-        elif pred_hum == 2 and act_hum == 5:
+        elif true_pred_hum == 2 and act_hum == 5:
             self.reward -= 1
 
         ######## DEPENDENT FEATURES ########
@@ -198,8 +231,10 @@ class DecHuRoSorting(gym.Env):
 
         self._agent_dones = False
         self.steps_beyond_done = None
+        self.prev_agent_type = [0]*self.n_agents
+        self.prev_obsv = [None]*self.n_agents
 
-        return self.get_init_obs(fixed_init)
+        return self._get_init_obs(fixed_init)
 
     ################ THIS IS CURRENTLY NOT USED ###############################
     # def failure_reset(self, fixed_init = False):
@@ -216,12 +251,12 @@ class DecHuRoSorting(gym.Env):
     #                 [[1,random.choice([0,2,3]),random.choice([1,2])],
     #                 [1,random.choice([0,2,3]),random.choice([1,2])]],
     #                 [[0,random.choice([0,2,3]),0],[0,random.choice([0,2,3]),0]]])
-    #     self.set_prev_obsv(0, self.vals2sid(state[0]))
-    #     self.set_prev_obsv(1, self.vals2sid(state[1]))
-    #     return self.check_interaction(self.get_global_onehot(state))
+    #     self._set_prev_obsv(0, self.vals2sid(state[0]))
+    #     self._set_prev_obsv(1, self.vals2sid(state[1]))
+    #     return self._check_interaction(self.get_global_onehot(state))
     #############################################################################
     
-    def check_interaction(self, s_r, s_h):
+    def _check_interaction(self, s_r, s_h):
         interaction = 0
         [oloc_r, eefloc_r, pred_r, inter_r] = self.sid2vals_interact(s_r)
         [oloc_h, eefloc_h, pred_h, inter_h] = self.sid2vals_interact(s_h)
@@ -243,42 +278,52 @@ class DecHuRoSorting(gym.Env):
         assert len(agents_action) == self.n_agents, 'Num actions != num agents.'
         self._step_count += 1
         self.reward = self.step_cost
+        
+        if len(self.onions_batch) == 0: # We're done sorting...
+            self._agent_dones = True
+            one_hot_state = self.get_global_onehot([self.sid2vals_interact(self.prev_obsv[i]) for i in self.n_agents])
+            return one_hot_state, [self.reward] * self.n_agents, [self._agent_dones] * self.n_agents, {'info': 'Sorting complete', 'agent_types': self.prev_agent_type}
 
         if verbose:
             [o_loc_0, eef_loc_0, pred_0, inter_0] = self.sid2vals_interact(self.prev_obsv[0])
             [o_loc_1, eef_loc_1, pred_1, inter_1] = self.sid2vals_interact(self.prev_obsv[1])
-            print(f'Step {self._step_count}: Agent 0 state: {self.get_state_meanings(o_loc_0, eef_loc_0, pred_0, inter_0)} | Agent 1 state: {self.get_state_meanings(o_loc_1, eef_loc_1, pred_1, inter_1)}')
-            print(f'Step {self._step_count}: Agent 0 action: {self.get_action_meanings(agents_action[0])} | Agent 1 action: {self.get_action_meanings(agents_action[1])}\n')
+            agent_0, type_0 = self.get_agent_meanings(0, self.prev_agent_type[0])
+            agent_1, type_1 = self.get_agent_meanings(1, self.prev_agent_type[1])
+            print(f'Step {self._step_count}: {agent_0} Agent state: {self.get_state_meanings(o_loc_0, eef_loc_0, pred_0, inter_0)} | {agent_1} Agent state: {self.get_state_meanings(o_loc_1, eef_loc_1, pred_1, inter_1)}')
+            print(f'Step {self._step_count}: {agent_0} Agent action: {self.get_action_meanings(agents_action[0])} | {agent_1} Agent action: {self.get_action_meanings(agents_action[1])}\n')
+            print(f'Step {self._step_count}: {agent_0} Agent type: {type_0} | {agent_1} Agent type: {type_1}\n')
 
         nxt_s = {}
+        nxt_ag_type = {}
         for agent_i, action in enumerate(agents_action):
             [o_loc, eef_loc, pred, inter] = self.sid2vals_interact(self.prev_obsv[agent_i])
-            if self.isValidState(o_loc, eef_loc, pred, inter):
-                if self.isValidAction(o_loc, eef_loc, pred, inter, action):
-                    nxt_s[agent_i] = self.findNxtState(o_loc, eef_loc, pred, inter, action)
+            if self._isValidState(o_loc, eef_loc, pred, inter):
+                if self._isValidAction(o_loc, eef_loc, pred, inter, action):
+                    self._setNxtType(agent_i, o_loc, eef_loc, pred, inter, action)
+                    nxt_s[agent_i] = self._findNxtState(agent_i, o_loc, eef_loc, pred, inter, action, nxt_ag_type[agent_i])
                 else:
                     if verbose:
-                        logger.error(f"Step {self._step_count}: Invalid action: {self.get_action_meanings(action)}, in current state: {self.get_state_meanings(o_loc, eef_loc, pred, inter)}, agent {agent_i} can't transition anywhere else with this. Staying put and ending episode!")
+                        logger.error(f"Step {self._step_count}: Invalid action: {self.get_action_meanings(action)}, in current state: {self.get_state_meanings(o_loc, eef_loc, pred, inter)}, {AGENT_MEANING[agent_i]} agent can't transition anywhere else with this. Staying put and ending episode!")
                     self._agent_dones = True
 
                     ''' Sending all invalid actions to an impossible sink state'''
 
-                    one_hot_state = [self.get_invalid_state()] * self.n_agents
-                   
-                    return one_hot_state, [self.reward] * self.n_agents, [self._agent_dones] * self.n_agents, {}
+                    one_hot_state = [self._get_invalid_state()] * self.n_agents
+                    
+                    return one_hot_state, [self.reward] * self.n_agents, [self._agent_dones] * self.n_agents, {'info': 'Invalid action reached a sink state.', 'agent_types': self.prev_agent_type}
             else:
                 if verbose:
-                    logger.error(f"Step {self._step_count}: Invalid current state {self.get_state_meanings(o_loc, eef_loc, pred, inter)} for agent {agent_i}, ending episode!")
+                    logger.error(f"Step {self._step_count}: Invalid current state {self.get_state_meanings(o_loc, eef_loc, pred, inter)} for {AGENT_MEANING[agent_i]} agent, ending episode!")
                 self._agent_dones = True
                 raise ValueError
 
-        self.get_reward(agents_action)
+        self._get_reward(agents_action)
 
         sid_rob = self.vals2sid_interact(sVals = nxt_s[0])
         sid_hum = self.vals2sid_interact(sVals = nxt_s[1])
-        sid_rob, sid_hum = self.check_interaction(sid_rob, sid_hum) # Check if the next state we've reached is still an interactive state.
-        self.set_prev_obsv(0, sid_rob)
-        self.set_prev_obsv(1, sid_hum)
+        sid_rob, sid_hum = self._check_interaction(sid_rob, sid_hum) # Check if the next state we've reached is still an interactive state.
+        self._set_prev_obsv(0, sid_rob)
+        self._set_prev_obsv(1, sid_hum)
 
         one_hot_state = self.get_global_onehot([self.sid2vals_interact(sid_rob), self.sid2vals_interact(sid_hum)])
 
@@ -299,14 +344,14 @@ class DecHuRoSorting(gym.Env):
             self.steps_beyond_done += 1
             self.reward = 0
 
-        return one_hot_state, [self.reward] * self.n_agents, [self._agent_dones] * self.n_agents, {}
+        return one_hot_state, [self.reward] * self.n_agents, [self._agent_dones] * self.n_agents, {'info': 'Valid action, valid next state.', 'agent_types': self.prev_agent_type}
 
     def get_global_onehot(self, X):
         '''
         @brief: Returns a global one hot state using local states.
         '''
         one_hots = []
-        for _, [onionloc, eefloc, pred, inter] in enumerate(X):
+        for [onionloc, eefloc, pred, inter] in X:
             onion_loc = self.get_one_hot(onionloc, self.nOnionLoc)
             eef_loc = self.get_one_hot(eefloc, self.nEEFLoc)
             prediction = self.get_one_hot(pred, self.nPredict)
@@ -315,23 +360,23 @@ class DecHuRoSorting(gym.Env):
         # print("Global one hot: ", one_hots)
         return one_hots
 
-    def get_invalid_state(self):
+    def _get_invalid_state(self):
         return np.concatenate([np.ones(self.nOnionLoc), np.ones(self.nEEFLoc), np.ones(self.nPredict), np.ones(self.nInteract)])  # last 1 is for interaction
 
-    def get_init_obs(self, fixed_init=False):
+    def _get_init_obs(self, fixed_init=False):
         '''
         @brief - Samples from the start state distrib and returns a joint one hot obsv.
         '''
         if fixed_init:
             s_r = s_h = self.vals2sid([3,3,1,0])    # Athome, Athome, Bad, False
         else:
-            self.update_start()
-            s_r, s_h = self.sample_start()
+            self._update_start()
+            s_r, s_h = self._sample_start()
 
-        s_r, s_h = self.check_interaction(s_r, s_h)
+        s_r, s_h = self._check_interaction(s_r, s_h)
 
-        self.set_prev_obsv(0, s_r)
-        self.set_prev_obsv(1, s_h)
+        self._set_prev_obsv(0, s_r)
+        self._set_prev_obsv(1, s_h)
 
         [onion_rob, eef_rob, pred_rob, inter_rob] = self.sid2vals_interact(s_r)
 
@@ -339,31 +384,31 @@ class DecHuRoSorting(gym.Env):
 
         return self.get_global_onehot([[onion_rob, eef_rob, pred_rob, inter_rob], [onion_hum, eef_hum, pred_hum, inter_hum]])
 
-    def sample_start(self):
+    def _sample_start(self):
         random.seed(time())
         sample_r = random.choices(np.arange(self.nSAgent), weights=np.reshape(self.start[0], (self.nSAgent)), k=1)[0]
         sample_h = random.choices(np.arange(self.nSAgent), weights=np.reshape(self.start[1], (self.nSAgent)), k=1)[0]
         return sample_r, sample_h
 
-    def update_start(self):
+    def _update_start(self):
         '''
         @brief - Sets the initial start state distrib. Currently, it's uniform b/w all valid states.
         '''
         for i in range(self.n_agents):
             for j in range(self.nSAgent):
                 [o_l, eef_loc, pred, inter] = self.sid2vals_interact(j)
-                if self.isValidStartState(o_l, eef_loc, pred, inter):
+                if self._isValidStartState(o_l, eef_loc, pred, inter):
                     self.start[i][j] = 1
             self.start[i][:] = self.start[i][:] / \
                 np.count_nonzero(self.start[i][:])
             assert np.sum(self.start[i]) == 1, "Start state distb doesn't add up to 1!"
 
-    def isValidStartState(self, onionLoc, eefLoc, pred, inter):
+    def _isValidStartState(self, onionLoc, eefLoc, pred, inter):
         '''
         @brief - Checks if a given state is a valid start state or not.
 
         '''
-        if (not self.isValidState(onionLoc, eefLoc, pred, inter)) or (eefLoc == 1):  # Can't start with eef on conv
+        if (not self._isValidState(onionLoc, eefLoc, pred, inter)) or (eefLoc == 1):  # Can't start with eef on conv
             return False
         return True
 
@@ -378,9 +423,18 @@ class DecHuRoSorting(gym.Env):
         @brief - Just a translator to make it human-readable.
         '''
         return ONIONLOC[o_loc], EEFLOC[eef_loc], PREDICTIONS[pred], bool(inter)
+    
+    def get_agent_meanings(self, agent_id, ag_type):
+        '''
+        @brief - Just a translator to make it human-readable.
+        '''
+        return AGENT_MEANING[agent_id], AGENT_TYPE[ag_type]
 
-    def set_prev_obsv(self, agent_id, s_id):
+    def _set_prev_obsv(self, agent_id, s_id):
         self.prev_obsv[agent_id] = copy.copy(s_id)
+        
+    def _set_prev_agent_type(self, agent_id, agent_type):
+        self.prev_obsv[agent_id] = copy.copy(agent_type)
 
     def get_prev_obsv(self, agent_id):
         return self.prev_obsv[agent_id]
@@ -481,7 +535,7 @@ class DecHuRoSorting(gym.Env):
         a_h = int(mod(a_g, self.nAAgent))
         return a_r, a_h
 
-    def isValidAction(self, onionLoc, eefLoc, pred, inter, action):
+    def _isValidAction(self, onionLoc, eefLoc, pred, inter, action):
         '''
         @brief - For each state there are a few invalid actions, returns only valid actions.
         '''
@@ -502,11 +556,18 @@ class DecHuRoSorting(gym.Env):
                     return True
                 else: return False
             else: return False
-        else: 
+        else:
             logger.error(f"Step {self._step_count}: Trying an impossible action are we? Better luck next time!")
             return False
         
-    def findNxtState(self, onionLoc, eefLoc, pred, inter, a):
+    def _setNxtType(self, agent_id, onionLoc, eefLoc, pred, inter, a):
+        # If unfatigued agent does not inspect good onion after pickup, he is considered fatigued.
+        if self.prev_agent_type[agent_id] == 0 and onionLoc == eefLoc == 3 and pred == 2 and a in [5,6]:
+            self._set_prev_agent_type(agent_id, 1)
+        if self.prev_agent_type[agent_id] == 1: # Fatigued agent cannot become unfatigued during the same episode.
+            return
+            
+    def _findNxtState(self, agent_id, onionLoc, eefLoc, pred, inter, a):
         ''' 
         @brief - Returns the valid nextstates. 
         NOTE: @TBD make transition more stochastic.
@@ -523,42 +584,61 @@ class DecHuRoSorting(gym.Env):
         Onionloc: {0: 'Unknown', 1: 'OnConveyor', 2: 'InFront', 3: 'AtHome'}
         eefLoc = {0: 'InBin', 1: 'OnConveyor', 2: 'InFront', 3: 'AtHome'}
         Predictions = {0:  'Unknown', 1: 'Bad', 2: 'Good}
-        Actions: {0: 'Noop', 1: 'Detect', 2: 'Pick', 3: 'Inspect', 4: 'PlaceOnConveyor', 5: 'PlaceInBin}
+        Actions: {0: 'Noop', 1: 'Detect_any', 2: 'Detect_good', 3: 'Pick', 4: 'Inspect', 5: 'PlaceOnConveyor', 6: 'PlaceinBin'}
         '''
         random.seed(time())
         if a == 0:
             ''' Noop '''
             return [onionLoc, eefLoc, pred, inter].copy()
-        elif a == 1:
-            ''' Detect '''
-            '''NOTE: While doing detect the eef has to come back home.
-                    Detect is done after placing somewhere and
-                    if it stays at bin or on conv after detect,
-                    that takes the transition to an invalid state.'''
-            prob = [0.4, 0.6]
-            n_states = [[1, 3, 1, inter], [1, 3, 2, inter]]
-            choice = random.choices(n_states, weights=prob, k=1)[0]
-            return choice
-        elif a == 2:
+        elif a in [1, 2]:
+            ''' Detect or Detect_good '''
+            return self._get_detected_state(agent_id, onionLoc, eefLoc, pred, inter, a)
+        elif a == 3:
             ''' Pick '''
             return [3, 3, pred, inter]
-        elif a == 3:
-            ''' Inspect '''
-            if pred == 1:   # If initial pred is bad, it'll change to good very rarely 
-                prob = [0.9, 0.1]
-            else:   # If initial pred is good, it'll change more often
-                prob = [0.3, 0.7]
-            n_states = [[2, 2, 1, inter], [2, 2, 2, inter]]
-            choice = random.choices(n_states, weights=prob, k=1)[0]
-            return choice
         elif a == 4:
+            ''' Inspect '''
+            if self.prev_agent_type[agent_id] == 0: # Not fatigued
+                if pred == 1:   # If initial pred is bad, it'll change to good very rarely 
+                    detected_label = random.choices([1,2], weights=[0.99, 0.01], k=1)[0]
+                else:   # If initial pred is good, return true label
+                    detected_label = self.true_label[agent_id]
+                    return [2, 2, detected_label, inter]
+            else: # Nothing happens when a fatigued agent does inspect
+                return [onionLoc, eefLoc, pred, inter].copy()
+        elif a == 5:
             ''' PlaceOnConv '''
             return [0, 1, 0, inter]
-        elif a == 5:
+        elif a == 6:
             ''' PlaceInBin '''
             return [0, 0, 0, inter]
 
-    def isValidState(self, onionLoc, eefLoc, pred, inter):
+    def _get_detected_state(self, agent_id, onionLoc, eefLoc, pred, inter, action):
+        
+        '''NOTE: While doing detect the eef has to come back home.
+            Detect is done after placing somewhere and
+            if it stays at bin or on conv after detect,
+            that takes the transition to an invalid state.'''
+            
+        # create a list of indices where the good onions are in the onions_batch
+        indices = [i for i in range(len(self.onions_batch)) if self.onions_batch[i] == 2]
+
+        # check if the list of indices is empty or Detect action is done.
+        if len(indices) == 0 or action == 1:
+            # choose a random index
+            index = random.randrange(len(self.onions_batch))
+            # remove the element at the chosen index
+        else:   # if Detect_good action is done
+            # choose a random index
+            index = random.choice(indices)
+            
+        # remove the element at the chosen index
+        self.true_label[agent_id] = self.onions_batch.pop(index)
+        # if it is a blemished onion, we return the true label, else detected label is wrong 50% of the time 
+        detected_label = self.true_label[agent_id] if self.true_label[agent_id] == 1 else random.choice([1,2])
+        return [1, 3, detected_label, inter]    # onconv, athome, prediction, interaction
+
+    def _isValidState(self, onionLoc, eefLoc, pred, inter):
         '''
         @brief - Checks if a given state is valid or not.
 
@@ -571,7 +651,7 @@ class DecHuRoSorting(gym.Env):
         return True
 
     def getKeyFromValue(self, my_dict, val):
-        for key, value in my_dict.items():
-            if val == value:
-                return key
-        return "key doesn't exist"
+        return next(
+            (key for key, value in my_dict.items() if val == value),
+            "key doesn't exist",
+        )
