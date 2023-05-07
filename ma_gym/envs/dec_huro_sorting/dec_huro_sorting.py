@@ -124,6 +124,7 @@ class DecHuRoSorting(gym.Env):
         self._full_obs = None
         self._agent_dones = None
         self.steps_beyond_done = None
+        self.verbose = False
         self.seed()
 
     def get_reward(self, acts):
@@ -187,6 +188,9 @@ class DecHuRoSorting(gym.Env):
         # If robot encounters an interaction and doesn't stop.
         if inter_rob == 1 and act_rob != 0:
             self.reward -= 3
+            
+    def render(self):
+        self.verbose = True
 
 
     def reset(self, fixed_init=False):
@@ -235,16 +239,19 @@ class DecHuRoSorting(gym.Env):
         human_state = self.vals2sid_interact([oloc_h, eefloc_h, pred_h, interaction])
         return robot_state, human_state
 
-    def step(self, agents_action, verbose=0):
+    def step(self, agents_action, verbose=None):
         '''
         @brief - Performs given actions and returns one_hot(joint next obsvs), reward and done
         '''
+        if verbose != None:
+            self.verbose = verbose
+            
         agents_action = np.squeeze(agents_action)
         assert len(agents_action) == self.n_agents, 'Num actions != num agents.'
         self._step_count += 1
         self.reward = self.step_cost
 
-        if verbose:
+        if self.verbose:
             [o_loc_0, eef_loc_0, pred_0, inter_0] = self.sid2vals_interact(self.prev_obsv[0])
             [o_loc_1, eef_loc_1, pred_1, inter_1] = self.sid2vals_interact(self.prev_obsv[1])
             print(f'Step {self._step_count}: Agent 0 state: {self.get_state_meanings(o_loc_0, eef_loc_0, pred_0, inter_0)} | Agent 1 state: {self.get_state_meanings(o_loc_1, eef_loc_1, pred_1, inter_1)}')
@@ -257,7 +264,7 @@ class DecHuRoSorting(gym.Env):
                 if self.isValidAction(o_loc, eef_loc, pred, inter, action):
                     nxt_s[agent_i] = self.findNxtState(o_loc, eef_loc, pred, inter, action)
                 else:
-                    if verbose:
+                    if self.verbose:
                         logger.error(f"Step {self._step_count}: Invalid action: {self.get_action_meanings(action)}, in current state: {self.get_state_meanings(o_loc, eef_loc, pred, inter)}, agent {agent_i} can't transition anywhere else with this. Staying put and ending episode!")
                     self._agent_dones = True
 
@@ -267,7 +274,7 @@ class DecHuRoSorting(gym.Env):
                    
                     return one_hot_state, [self.reward] * self.n_agents, [self._agent_dones] * self.n_agents, {}
             else:
-                if verbose:
+                if self.verbose:
                     logger.error(f"Step {self._step_count}: Invalid current state {self.get_state_meanings(o_loc, eef_loc, pred, inter)} for agent {agent_i}, ending episode!")
                 self._agent_dones = True
                 raise ValueError
