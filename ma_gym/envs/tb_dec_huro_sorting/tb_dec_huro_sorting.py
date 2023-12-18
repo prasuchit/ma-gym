@@ -131,7 +131,7 @@ class TBDecHuRoSorting(gym.Env):
         self._obs_high = np.ones(self.nOnionLoc+self.nEEFLoc+self.nPredict+self.nInteract+self.nAgent_type)  
         self._obs_low = np.zeros(self.nOnionLoc+self.nEEFLoc+self.nPredict+self.nInteract+self.nAgent_type) 
         self.observation_space = MultiAgentObservationSpace([spaces.Box(self._obs_low, self._obs_high)
-                                                             for _ in range(self.n_agents)])
+                                                            for _ in range(self.n_agents)])
         self.step_cost = 0.0
         self.reward = self.step_cost
         self._full_obs = None
@@ -221,7 +221,6 @@ class TBDecHuRoSorting(gym.Env):
         if inter_rob == 1 and act_rob != 0:
             self.reward -= 3
 
-
     def reset(self, fixed_init=False):
         '''
         @brief - Just setting all params to defaults and returning a valid start obsv.
@@ -236,26 +235,6 @@ class TBDecHuRoSorting(gym.Env):
 
         return self._get_init_obs(fixed_init)
 
-    ################ THIS IS CURRENTLY NOT USED ###############################
-    # def failure_reset(self, fixed_init = False):
-    #     random.seed(time())
-    #     self._step_count = 0
-    #     self.reward = self.step_cost
-    #     self._agent_dones = False
-    #     self.steps_beyond_done = None
-    #     if fixed_init:
-    #         state = [[0,3,0],[0,3,0]]
-    #     else:
-    #         state = random.choice([[[2,2,2],[2,2,2]],
-    #                 [[3,3,2],[3,3,2]],
-    #                 [[1,random.choice([0,2,3]),random.choice([1,2])],
-    #                 [1,random.choice([0,2,3]),random.choice([1,2])]],
-    #                 [[0,random.choice([0,2,3]),0],[0,random.choice([0,2,3]),0]]])
-    #     self._set_prev_obsv(0, self.vals2sid(state[0]))
-    #     self._set_prev_obsv(1, self.vals2sid(state[1]))
-    #     return self._check_interaction(self.get_global_onehot(state))
-    #############################################################################
-    
     def _check_interaction(self, s_r, s_h):
         interaction = 0
         [oloc_r, eefloc_r, pred_r, inter_r] = self.sid2vals_interact(s_r)
@@ -408,9 +387,7 @@ class TBDecHuRoSorting(gym.Env):
         @brief - Checks if a given state is a valid start state or not.
 
         '''
-        if (not self._isValidState(onionLoc, eefLoc, pred, inter)) or (eefLoc == 1):  # Can't start with eef on conv
-            return False
-        return True
+        return bool(self._isValidState(onionLoc, eefLoc, pred, inter) and eefLoc != 1)
 
     def get_action_meanings(self, action):
         '''
@@ -543,19 +520,11 @@ class TBDecHuRoSorting(gym.Env):
         if action == 0: # Noop, this can be done from anywhere.
             return True
         elif action == 1:   # Detect
-            if pred == 0 or onionLoc == 0:  # Only when you don't know about the onion
-                return True
-            else: return False
+            return pred == 0 or onionLoc == 0
         elif action == 2:   # Pick
-            if onionLoc == 1 and eefLoc != 1:   # As long as onion is on conv and eef is not
-                return True
-            else: return False
-        elif action == 3 or action == 4 or action == 5:   # Inspect # Placeonconv # Placeinbin
-            if pred != 0 and onionLoc != 0: # Pred and onion loc both are known. 
-                if onionLoc == eefLoc and eefLoc != 1:    # Onion is in hand and hand isn't on conv
-                    return True
-                else: return False
-            else: return False
+            return onionLoc == 1 and eefLoc != 1
+        elif action in [3, 4, 5]:   # Inspect # Placeonconv # Placeinbin
+            return pred != 0 and onionLoc != 0 and onionLoc == eefLoc and eefLoc != 1
         else:
             logger.error(f"Step {self._step_count}: Trying an impossible action are we? Better luck next time!")
             return False
@@ -598,14 +567,12 @@ class TBDecHuRoSorting(gym.Env):
             return [3, 3, pred, inter]
         elif a == 4:
             ''' Inspect '''
-            if self.prev_agent_type[agent_id] == 0: # Not fatigued
-                if pred == 1:   # If initial pred is bad, it'll change to good very rarely 
-                    detected_label = random.choices([1,2], weights=[0.99, 0.01], k=1)[0]
-                else:   # If initial pred is good, return true label
-                    detected_label = self.true_label[agent_id]
-                    return [2, 2, detected_label, inter]
-            else: # Nothing happens when a fatigued agent does inspect
+            if self.prev_agent_type[agent_id] != 0:
                 return [onionLoc, eefLoc, pred, inter].copy()
+            if pred == 1:   # If initial pred is bad, it'll change to good very rarely 
+                detected_label = random.choices([1,2], weights=[0.99, 0.01], k=1)[0]
+            else:   # If initial pred is good, return true label
+                return [2, 2, self.true_label[agent_id], inter]
         elif a == 5:
             ''' PlaceOnConv '''
             return [0, 1, 0, inter]
@@ -614,7 +581,7 @@ class TBDecHuRoSorting(gym.Env):
             return [0, 0, 0, inter]
 
     def _get_detected_state(self, agent_id, onionLoc, eefLoc, pred, inter, action):
-        
+
         '''NOTE: While doing detect the eef has to come back home.
             Detect is done after placing somewhere and
             if it stays at bin or on conv after detect,
@@ -624,14 +591,14 @@ class TBDecHuRoSorting(gym.Env):
         indices = [i for i in range(len(self.onions_batch)) if self.onions_batch[i] == 2]
 
         # check if the list of indices is empty or Detect action is done.
-        if len(indices) == 0 or action == 1:
+        if not indices or action == 1:
             # choose a random index
             index = random.randrange(len(self.onions_batch))
             # remove the element at the chosen index
         else:   # if Detect_good action is done
             # choose a random index
             index = random.choice(indices)
-            
+
         # remove the element at the chosen index
         self.true_label[agent_id] = self.onions_batch.pop(index)
         # if it is a blemished onion, we return the true label, else detected label is wrong 50% of the time 
@@ -645,10 +612,12 @@ class TBDecHuRoSorting(gym.Env):
         Interaction has nothing to do with a local state being valid or not.
         We just have the variable here because it's part of the local state.
         '''
-        if (onionLoc == 2 and eefLoc != 2) or (onionLoc == 3 and eefLoc != 3) or \
-            (onionLoc == 0 and pred != 0) or (onionLoc != 0 and pred == 0):
-            return False
-        return True
+        return (
+            (onionLoc != 2 or eefLoc == 2)
+            and (onionLoc != 3 or eefLoc == 3)
+            and (onionLoc != 0 or pred == 0)
+            and (onionLoc == 0 or pred != 0)
+        )
 
     def getKeyFromValue(self, my_dict, val):
         return next(
