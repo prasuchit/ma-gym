@@ -2,7 +2,6 @@ import copy
 import logging
 import random
 from enum import *
-from multiprocessing.sharedctypes import Value
 from operator import mod
 from time import sleep, time
 
@@ -13,9 +12,6 @@ from gym.utils import seeding
 
 from ma_gym.envs.utils.action_space import MultiAgentActionSpace
 from ma_gym.envs.utils.observation_space import MultiAgentObservationSpace
-
-# from ..utils.action_space import MultiAgentActionSpace
-# from ..utils.observation_space import MultiAgentObservationSpace
 
 logger = logging.getLogger(__name__)
 
@@ -155,9 +151,11 @@ class TBDecHuRoSorting(gym.Env):
         rob_type = self.prev_agent_type[0]
         hum_type = self.prev_agent_type[1]
         
-        ''' NOTE: We've modified the prev reward func here to check for
-        true label instead of detected label and for unblemished onion, 
-        we assume detected label is wrong 50% time. Inspect reveals the true label.'''
+        '''
+        NOTE: Robot always remains unfatigued and hence reward is assigned based on true label.
+        For Human on the other hand, true label is used when he is unfatigued and predicted label
+        is used when he is fatigued since that's the best estimate he has sans inspection.
+        '''
         
         ######## INDEPENDENT FEATURES ########
 
@@ -185,23 +183,37 @@ class TBDecHuRoSorting(gym.Env):
             raise ValueError(f'Robot cannot be {AGENT_TYPE[rob_type]}.')
 
         ##################### Human #########################
+        if hum_type == 0:   # Unfatigued
             # Bad onion place in bin
-        if true_pred_hum == 1 and act_hum == 5:
-            self.reward += 1
-        # Good onion place on conv
-        elif true_pred_hum == 2 and act_hum == 4:
-            self.reward += 1
+            if true_pred_hum == 1 and act_hum == 5:
+                self.reward += 1
+            # Good onion place on conv
+            elif true_pred_hum == 2 and act_hum == 4:
+                self.reward += 1
+            # Bad onion place on conv
+            elif true_pred_hum == 1 and act_hum == 4:
+                self.reward -= 1
+            # Good onion place in bin
+            elif true_pred_hum == 2 and act_hum == 5:
+                self.reward -= 1
+        else:       # Fatigued
+            # Bad onion place in bin
+            if pred_hum == 1 and act_hum == 5:
+                self.reward += 1
+            # Good onion place on conv
+            elif pred_hum == 2 and act_hum == 4:
+                self.reward += 1
+                
+            # Fatigued human, currently picked, find good, inspect
+            elif o_loc_hum == 3 and pred_hum == 2 and act_hum == 3:
+                self.reward -= 10
             
-        # # Unfatigued human, currently picked, find good, inspect
-        # elif hum_type == 0 and o_loc_hum == 3 and pred_hum == 2 and act_hum == 3:
-        #     self.reward += 1
-        
-        # Bad onion place on conv
-        elif true_pred_hum == 1 and act_hum == 4:
-            self.reward -= 1
-        # Good onion place in bin
-        elif true_pred_hum == 2 and act_hum == 5:
-            self.reward -= 1
+            # Bad onion place on conv
+            elif pred_hum == 1 and act_hum == 4:
+                self.reward -= 1
+            # Good onion place in bin
+            elif pred_hum == 2 and act_hum == 5:
+                self.reward -= 1
 
         ######## DEPENDENT FEATURES ########
 
