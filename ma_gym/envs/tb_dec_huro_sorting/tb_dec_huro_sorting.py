@@ -115,9 +115,8 @@ class TBDecHuRoSorting(gym.Env):
         self.nPredict = len(PREDICTIONS)
         self.nAgent_type = len(AGENT_TYPE)
         self.nInteract = 2
-        ''' NOTE: The physical state does not include the agent type. But the observation space includes the agent type. 
-        Agent type comes from the belief update, step function doesn't provide this; although it does keep track of the type. '''
-        self.nSAgent = self.nOnionLoc*self.nEEFLoc*self.nPredict*self.nInteract
+        ''' NOTE: The physical state include own type. But the observation space includes the own and other agent(s) types. '''
+        self.nSAgent = self.nOnionLoc*self.nEEFLoc*self.nPredict*self.nInteract*self.nAgent_type
         self.nAAgent = len(ACTION_MEANING)
         self.nSGlobal = (self.nSAgent)**self.n_agents
         self.nAGlobal = self.nAAgent**self.n_agents
@@ -125,11 +124,14 @@ class TBDecHuRoSorting(gym.Env):
         self.prev_obsv = [None]*self.n_agents
         self.prev_agent_type = [None]*self.n_agents
         self.true_label = [None]*self.n_agents
+        self.num_onions_sorted_by_agent = [0]*self.n_agents
+        self.onion_in_focus_status = ['']*self.n_agents
         random.seed(time())
         # self.onions_batch = [random.choice([1, 2]) for _ in range(100)] # 1 - Blemished onion, 2 - Unblemished onion.
         self.action_space = MultiAgentActionSpace([spaces.Discrete(self.nAAgent) for _ in range(self.n_agents)])
-        self._obs_high = np.ones(self.nOnionLoc+self.nEEFLoc+self.nPredict+self.nInteract+self.nAgent_type)  
-        self._obs_low = np.zeros(self.nOnionLoc+self.nEEFLoc+self.nPredict+self.nInteract+self.nAgent_type) 
+        # NOTE: In obs_high and obs_low, one is self-type the other is other agent(s)' type that comes from belief update and not from step function.
+        self._obs_high = np.ones(self.nOnionLoc+self.nEEFLoc+self.nPredict+self.nInteract+(self.nAgent_type * self.n_agents))
+        self._obs_low = np.zeros(self.nOnionLoc+self.nEEFLoc+self.nPredict+self.nInteract+(self.nAgent_type * self.n_agents)) 
         self.observation_space = MultiAgentObservationSpace([spaces.Box(self._obs_low, self._obs_high)
                                                             for _ in range(self.n_agents)])
         self.step_cost = 0.0
@@ -236,7 +238,9 @@ class TBDecHuRoSorting(gym.Env):
         self.steps_beyond_done = None
         self.prev_agent_type = [0]*self.n_agents
         self.prev_obsv = [None]*self.n_agents
-        self.true_label = [None]*self.n_agents
+        self.true_label = [None]*self.n_agents        
+        self.num_onions_sorted_by_agent = [0]*self.n_agents
+        self.onion_in_focus_status = ['']*self.n_agents
 
         return self._get_init_obs(fixed_init)
 
@@ -282,8 +286,8 @@ class TBDecHuRoSorting(gym.Env):
             [o_loc, eef_loc, pred, inter] = self.sid2vals_interact(self.prev_obsv[agent_i])
             if self._isValidState(o_loc, eef_loc, pred, inter):
                 if self._isValidAction(o_loc, eef_loc, pred, inter, action):
-                    self._setNxtType(agent_i, o_loc, eef_loc, pred, inter, action)
                     nxt_s[agent_i] = self._findNxtState(agent_id=agent_i, onionLoc=o_loc, eefLoc=eef_loc, pred=pred, inter=inter, a=action)
+                    self._setNxtType(agent_i)
                 else:
                     if verbose:
                         logger.error(f"Step {self._step_count}: Invalid action: {self.get_action_meanings(action)}, in current state: {self.get_state_meanings(o_loc, eef_loc, pred, inter)}, {AGENT_MEANING[agent_i]} agent can't transition anywhere else with this. Staying put and ending episode!")
@@ -334,17 +338,18 @@ class TBDecHuRoSorting(gym.Env):
         @brief: Returns a global one hot state using local states.
         '''
         one_hots = []
-        for [onionloc, eefloc, pred, inter] in X:
+        for ag_id, [onionloc, eefloc, pred, inter] in enumerate(X):
             onion_loc = self.get_one_hot(onionloc, self.nOnionLoc)
             eef_loc = self.get_one_hot(eefloc, self.nEEFLoc)
             prediction = self.get_one_hot(pred, self.nPredict)
             interaction = self.get_one_hot(inter, self.nInteract)
-            one_hots.append(np.concatenate([onion_loc, eef_loc, prediction, interaction]))
+            my_type = self.get_one_hot(self.prev_agent_type[ag_id], self.nAgent_type)
+            one_hots.append(np.concatenate([onion_loc, eef_loc, prediction, interaction, my_type]))
         # print("Global one hot: ", one_hots)
         return one_hots
 
     def _get_invalid_state(self):
-        return np.concatenate([np.ones(self.nOnionLoc), np.ones(self.nEEFLoc), np.ones(self.nPredict), np.ones(self.nInteract)])  # last 1 is for interaction
+        return np.concatenate([np.ones(self.nOnionLoc), np.ones(self.nEEFLoc), np.ones(self.nPredict), np.ones(self.nInteract), np.ones(self.nAgent_type)])
 
     def _get_init_obs(self, fixed_init=False):
         '''
@@ -533,12 +538,11 @@ class TBDecHuRoSorting(gym.Env):
             logger.error(f"Step {self._step_count}: Trying an impossible action are we? Better luck next time!")
             return False
         
-    def _setNxtType(self, agent_id, onionLoc, eefLoc, pred, inter, a):
-        # If unfatigued agent does not inspect good onion after pickup, he is considered fatigued.
-        if self.prev_agent_type[agent_id] == 0 and onionLoc == eefLoc == 3 and pred == 2 and a in [5,6]:
-            self._set_prev_agent_type(agent_id, 1)
+    def _setNxtType(self, agent_id):        
         if self.prev_agent_type[agent_id] == 1: # Fatigued agent cannot become unfatigued during the same episode.
             return
+        elif agent_id == 1 and self.num_onions_sorted_by_agent[agent_id] > 2:
+            self._set_prev_agent_type(agent_id, 1)
             
     def _findNxtState(self, agent_id, onionLoc, eefLoc, pred, inter, a):
         ''' 
@@ -567,26 +571,42 @@ class TBDecHuRoSorting(gym.Env):
             ''' Detect '''
             self.true_label[agent_id] = random.choices([1,2], weights=[0.5, 0.5], k=1)[0]
             pred = self.true_label[agent_id] if self.true_label[agent_id] == 1 else random.choices([1,2], weights=[0.5, 0.5], k=1)[0]
+            if self.onion_in_focus_status[agent_id] in ['', 'Placed']:
+                self.onion_in_focus_status[agent_id] = 'Chosen'
             return [1, 3, pred, inter]
         elif a == 2:
             ''' Detect_good '''
             self.true_label[agent_id] = random.choices([1,2], weights=[0.5, 0.5], k=1)[0]
+            if self.onion_in_focus_status[agent_id] in ['', 'Placed']:
+                self.onion_in_focus_status[agent_id] = 'Chosen'
             return [1, 3, 2, inter]
         elif a == 3:
             ''' Detect_bad '''
             self.true_label[agent_id] = 1
+            if self.onion_in_focus_status[agent_id] in ['', 'Placed']:
+                self.onion_in_focus_status[agent_id] = 'Chosen'
             return [1, 3, 1, inter]
         elif a == 4:
             ''' Pick '''
+            if self.onion_in_focus_status[agent_id] == 'Chosen':
+                self.onion_in_focus_status[agent_id] = 'Picked'
             return [3, 3, pred, inter]
         elif a == 5:
             ''' Inspect '''
+            if self.onion_in_focus_status[agent_id] == 'Picked':
+                self.onion_in_focus_status[agent_id] = 'Inspected'
             return [2, 2, self.true_label[agent_id], inter]
         elif a == 6:
             ''' PlaceOnConv '''
+            if self.onion_in_focus_status[agent_id] in ['Picked', 'Inspected']:
+                self.onion_in_focus_status[agent_id] = 'Placed'
+                self.num_onions_sorted_by_agent[agent_id] += 1
             return [0, 1, 0, inter]
         elif a == 7:
             ''' PlaceInBin '''
+            if self.onion_in_focus_status[agent_id] in ['Picked', 'Inspected']:
+                self.onion_in_focus_status[agent_id] = 'Placed'
+                self.num_onions_sorted_by_agent[agent_id] += 1
             return [0, 0, 0, inter]
 
     # def _get_detected_state(self, agent_id, onionLoc, eefLoc, pred, inter, action):
