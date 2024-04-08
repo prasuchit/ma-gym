@@ -145,8 +145,8 @@ class TBDecHuRoSorting(gym.Env):
         '''
         @brief Provides joint reward for appropriate team behavior.
         '''
-        [o_loc_rob, eef_loc_rob, pred_rob, inter_rob] = self.sid2vals_interact(self.prev_obsv[0])
-        [o_loc_hum, eef_loc_hum, pred_hum, inter_hum] = self.sid2vals_interact(self.prev_obsv[1])
+        [_, _, _, inter_rob] = self.sid2vals_interact(self.prev_obsv[0])
+        [_, _, _, _] = self.sid2vals_interact(self.prev_obsv[1])
         
         act_rob = acts[0]
         act_hum = acts[1]
@@ -246,8 +246,8 @@ class TBDecHuRoSorting(gym.Env):
 
     def _check_interaction(self, s_r, s_h):
         interaction = 0
-        [oloc_r, eefloc_r, pred_r, inter_r] = self.sid2vals_interact(s_r)
-        [oloc_h, eefloc_h, pred_h, inter_h] = self.sid2vals_interact(s_h)
+        [oloc_r, eefloc_r, pred_r, _] = self.sid2vals_interact(s_r)
+        [oloc_h, eefloc_h, pred_h, _] = self.sid2vals_interact(s_h)
         if oloc_r == oloc_h == pred_r == pred_h == 2:   # Both oloc infront, pred good  - Placeonconv
             interaction = 1
         if oloc_r == oloc_h == pred_r == pred_h == 0:   # Both oloc and pred unknown    - Detect
@@ -256,11 +256,11 @@ class TBDecHuRoSorting(gym.Env):
             interaction = 1
         robot_state = self.vals2sid_interact([oloc_r, eefloc_r, pred_r, interaction])
         human_state = self.vals2sid_interact([oloc_h, eefloc_h, pred_h, interaction])
-        return robot_state, human_state
+        return robot_state, human_state, bool(interaction)
 
     def step(self, agents_action, verbose=0):
         '''
-        @brief - Performs given actions and returns one_hot(joint next obsvs), reward and done
+        @brief - Performs given actions and returns one_hot (joint next obsvs), reward and done
         '''
         agents_action = np.squeeze(agents_action)
         assert len(agents_action) == self.n_agents, 'Num actions != num agents.'
@@ -277,9 +277,9 @@ class TBDecHuRoSorting(gym.Env):
             [o_loc_1, eef_loc_1, pred_1, inter_1] = self.sid2vals_interact(self.prev_obsv[1])
             agent_0, type_0 = self.get_agent_meanings(0, self.prev_agent_type[0])
             agent_1, type_1 = self.get_agent_meanings(1, self.prev_agent_type[1])
-            print(f'Step {self._step_count}: {agent_0} Agent state: {self.get_state_meanings(o_loc_0, eef_loc_0, pred_0, inter_0)} | {agent_1} Agent state: {self.get_state_meanings(o_loc_1, eef_loc_1, pred_1, inter_1)}')
-            print(f'Step {self._step_count}: {agent_0} Agent action: {self.get_action_meanings(agents_action[0])} | {agent_1} Agent action: {self.get_action_meanings(agents_action[1])}\n')
-            print(f'Step {self._step_count}: {agent_0} Agent type: {type_0} | {agent_1} Agent type: {type_1}\n')
+            print(f'Step {self._step_count}: Agent {agent_0} state: {self.get_state_meanings(o_loc_0, eef_loc_0, pred_0, inter_0)} | Agent {agent_1} state: {self.get_state_meanings(o_loc_1, eef_loc_1, pred_1, inter_1)}')
+            print(f'Step {self._step_count}: Agent {agent_0} action: {self.get_action_meanings(agents_action[0])} | Agent {agent_1} action: {self.get_action_meanings(agents_action[1])}\n')
+            print(f'Step {self._step_count}: Agent {agent_0} type: {type_0} | Agent {agent_1} type: {type_1}\n')
 
         nxt_s = {}
         for agent_i, action in enumerate(agents_action):
@@ -302,13 +302,13 @@ class TBDecHuRoSorting(gym.Env):
                 if verbose:
                     logger.error(f"Step {self._step_count}: Invalid current state {self.get_state_meanings(o_loc, eef_loc, pred, inter)} for {AGENT_MEANING[agent_i]} agent, ending episode!")
                 self._agent_dones = True
-                raise ValueError
+                raise ValueError(f"Invalid state: Agent {agent_i} state: {self.get_state_meanings(o_loc, eef_loc, pred, inter)}, action:{action}.\n Shouldn't be reaching an invalid state!")
 
         self._get_reward(agents_action)
 
         sid_rob = self.vals2sid_interact(sVals = nxt_s[0])
         sid_hum = self.vals2sid_interact(sVals = nxt_s[1])
-        sid_rob, sid_hum = self._check_interaction(sid_rob, sid_hum) # Check if the next state we've reached is still an interactive state.
+        sid_rob, sid_hum, is_interactive = self._check_interaction(sid_rob, sid_hum) # Check if the next state we've reached is still an interactive state.
         self._set_prev_obsv(0, sid_rob)
         self._set_prev_obsv(1, sid_hum)
 
@@ -331,7 +331,7 @@ class TBDecHuRoSorting(gym.Env):
             self.steps_beyond_done += 1
             self.reward = 0
 
-        return one_hot_state, [self.reward] * self.n_agents, [self._agent_dones] * self.n_agents, {'info': 'Valid action, valid next state.', 'agent_types': self.prev_agent_type}
+        return one_hot_state, [self.reward] * self.n_agents, [self._agent_dones] * self.n_agents, {'info': 'Valid action, valid next state.', 'agent_types': self.prev_agent_type, 'interactive': is_interactive}
 
     def get_global_onehot(self, X):
         '''
@@ -361,7 +361,7 @@ class TBDecHuRoSorting(gym.Env):
             self._update_start()
             s_r, s_h = self._sample_start()
 
-        s_r, s_h = self._check_interaction(s_r, s_h)
+        s_r, s_h, _ = self._check_interaction(s_r, s_h) # System should never start in an interactive state, so we can assume interaction = False
 
         self._set_prev_obsv(0, s_r)
         self._set_prev_obsv(1, s_h)
@@ -397,24 +397,19 @@ class TBDecHuRoSorting(gym.Env):
 
         '''
         return bool(self._isValidState(onionLoc, eefLoc, pred, inter) and eefLoc != 1)
-
-    def get_action_meanings(self, action):
-        '''
-        @brief - Just a translator to make it human-readable.
-        '''
-        return ACTION_MEANING[action]
     
-    def get_state_meanings(self, o_loc, eef_loc, pred, inter):
-        '''
-        @brief - Just a translator to make it human-readable.
-        '''
-        return ONIONLOC[o_loc], EEFLOC[eef_loc], PREDICTIONS[pred], bool(inter)
-    
-    def get_agent_meanings(self, agent_id, ag_type):
-        '''
-        @brief - Just a translator to make it human-readable.
-        '''
-        return AGENT_MEANING[agent_id], AGENT_TYPE[ag_type]
+    def _setNxtType(self, agent_id):        
+        if self.prev_agent_type[agent_id] == 1: # Fatigued agent cannot become unfatigued during the same episode.
+            return
+        elif agent_id == 1 and self.num_onions_sorted_by_agent[agent_id] > 2:
+            self._set_prev_agent_type(agent_id, 1)
+            
+    def get_other_agents_types(self, curr_ag_id):
+        return [
+            self.prev_agent_type[ag_id]
+            for ag_id in range(self.n_agents)
+            if ag_id != curr_ag_id
+        ]
 
     def _set_prev_obsv(self, agent_id, s_id):
         self.prev_obsv[agent_id] = copy.copy(s_id)
@@ -424,102 +419,6 @@ class TBDecHuRoSorting(gym.Env):
 
     def get_prev_obsv(self, agent_id):
         return self.prev_obsv[agent_id]
-
-    def get_one_hot(self, x, max_size):
-        '''
-        @brief - Given an integer and the max limit, returns it in one hot array form.
-        '''
-        assert 0 <= x < max_size, 'Invalid value! x should be b/w (0, max_size-1)'
-        return np.squeeze(np.eye(max_size)[np.array(x).reshape(-1)])
-
-    def sid2vals(self, s):
-        '''
-        @brief - Given state id, this func converts it to the 3 variable values. 
-        '''
-        sid = s
-        onionloc = int(mod(sid, self.nOnionLoc))
-        sid = (sid - onionloc)/self.nOnionLoc
-        eefloc = int(mod(sid, self.nEEFLoc))
-        sid = (sid - eefloc)/self.nEEFLoc
-        predic = int(mod(sid, self.nPredict))
-        return onionloc, eefloc, predic
-    
-    def sid2vals_interact(self, s):
-        '''
-        @brief - Given state id, this func converts it to the 4 variable values. 
-        '''
-        sid = s
-        onionloc = int(mod(sid, self.nOnionLoc))
-        sid = (sid - onionloc)/self.nOnionLoc
-        eefloc = int(mod(sid, self.nEEFLoc))
-        sid = (sid - eefloc)/self.nEEFLoc
-        predic = int(mod(sid, self.nPredict))
-        sid = (sid - predic)/self.nPredict
-        interact = int(mod(sid, self.nInteract))
-        return [onionloc, eefloc, predic, interact]
-
-    def vals2sid(self, sVals):
-        '''
-        @brief - Given the 3 variable values making up a state, this converts it into state id 
-        '''
-        ol = sVals[0]
-        eefl = sVals[1]
-        pred = sVals[2]
-        return (ol + self.nOnionLoc * (eefl + self.nEEFLoc * pred))
-    
-    def vals2sid_interact(self, sVals):
-        '''
-        @brief - Given the 4 variable values making up a state, this converts it into state id 
-        '''
-        ol = sVals[0]
-        eefl = sVals[1]
-        pred = sVals[2]
-        interact = sVals[3]
-        return (ol + self.nOnionLoc * (eefl + self.nEEFLoc * (pred + self.nPredict * interact)))
-    
-    def vals2sGlobal(self, oloc_r, eefloc_r, pred_r, interact_r, oloc_h, eefloc_h, pred_h, interact_h):
-        '''
-        @brief - Given the variable values making up a global state, this converts it into global state id 
-        '''
-        return (oloc_r + self.nOnionLoc * (eefloc_r + self.nEEFLoc * (pred_r + self.nPredict *(interact_r + self.nInteract *(oloc_h + self.nOnionLoc * (eefloc_h + self.nEEFLoc * (pred_h + self.nPredict * interact_h)))))))
-
-    def vals2aGlobal(self, a_r, a_h):
-        '''
-        @brief - Given the individual agent actions, this converts it into action id 
-        '''
-        return a_r + self.nAAgent * a_h
-
-    def sGlobal2vals(self, s_global):
-        '''
-        @brief - Given the global state id, this converts it into the individual state variable values
-        '''
-        s_g = s_global
-        oloc_r = int(mod(s_g, self.nOnionLoc))
-        s_g = (s_g - oloc_r)/self.nOnionLoc
-        eefloc_r = int(mod(s_g, self.nEEFLoc))
-        s_g = (s_g - eefloc_r)/self.nEEFLoc
-        pred_r = int(mod(s_g, self.nPredict))
-        s_g = (s_g - pred_r)/self.nPredict
-        interact_r = int(mod(s_g, self.nInteract))
-        s_g = (s_g - interact_r)/self.nInteract
-        oloc_h = int(mod(s_g, self.nOnionLoc))
-        s_g = (s_g - oloc_h)/self.nOnionLoc
-        eefloc_h = int(mod(s_g, self.nEEFLoc))
-        s_g = (s_g - eefloc_h)/self.nEEFLoc
-        pred_h = int(mod(s_g, self.nPredict))
-        s_g = (s_g - pred_h)/self.nPredict
-        interact_h = int(mod(s_g, self.nInteract))
-        return oloc_r, eefloc_r, pred_r, interact_r, oloc_h, eefloc_h, pred_h, interact_h
-
-    def aGlobal2vals(self, a_global):
-        '''
-        @brief - Given the global action, this converts it into individual action ids
-        '''
-        a_g = a_global
-        a_r = int(mod(a_g, self.nAAgent))
-        a_g = (a_g - a_r)/self.nAAgent
-        a_h = int(mod(a_g, self.nAAgent))
-        return a_r, a_h
 
     def _isValidAction(self, onionLoc, eefLoc, pred, inter, action):
         '''
@@ -538,12 +437,6 @@ class TBDecHuRoSorting(gym.Env):
             logger.error(f"Step {self._step_count}: Trying an impossible action are we? Better luck next time!")
             return False
         
-    def _setNxtType(self, agent_id):        
-        if self.prev_agent_type[agent_id] == 1: # Fatigued agent cannot become unfatigued during the same episode.
-            return
-        elif agent_id == 1 and self.num_onions_sorted_by_agent[agent_id] > 2:
-            self._set_prev_agent_type(agent_id, 1)
-            
     def _findNxtState(self, agent_id, onionLoc, eefLoc, pred, inter, a):
         ''' 
         @brief - Returns the valid nextstates. 
@@ -647,6 +540,122 @@ class TBDecHuRoSorting(gym.Env):
             and (onionLoc != 0 or pred == 0)
             and (onionLoc == 0 or pred != 0)
         )
+
+    def get_action_meanings(self, action):
+        '''
+        @brief - Just a translator to make it human-readable.
+        '''
+        return ACTION_MEANING[action]
+    
+    def get_state_meanings(self, o_loc, eef_loc, pred, inter):
+        '''
+        @brief - Just a translator to make it human-readable.
+        '''
+        return ONIONLOC[o_loc], EEFLOC[eef_loc], PREDICTIONS[pred], bool(inter)
+    
+    def get_agent_meanings(self, agent_id, ag_type):
+        '''
+        @brief - Just a translator to make it human-readable.
+        '''
+        return AGENT_MEANING[agent_id], AGENT_TYPE[ag_type]
+
+    
+    def get_one_hot(self, x, max_size):
+        '''
+        @brief - Given an integer and the max limit, returns it in one hot array form.
+        '''
+        assert 0 <= x < max_size, 'Invalid value! x should be b/w (0, max_size-1)'
+        return np.squeeze(np.eye(max_size)[np.array(x).reshape(-1)])
+
+    def sid2vals(self, s):
+        '''
+        @brief - Given state id, this func converts it to the 3 variable values. 
+        '''
+        sid = s
+        onionloc = int(mod(sid, self.nOnionLoc))
+        sid = (sid - onionloc)/self.nOnionLoc
+        eefloc = int(mod(sid, self.nEEFLoc))
+        sid = (sid - eefloc)/self.nEEFLoc
+        predic = int(mod(sid, self.nPredict))
+        return onionloc, eefloc, predic
+    
+    def sid2vals_interact(self, s):
+        '''
+        @brief - Given state id, this func converts it to the 4 variable values. 
+        '''
+        sid = s
+        onionloc = int(mod(sid, self.nOnionLoc))
+        sid = (sid - onionloc)/self.nOnionLoc
+        eefloc = int(mod(sid, self.nEEFLoc))
+        sid = (sid - eefloc)/self.nEEFLoc
+        predic = int(mod(sid, self.nPredict))
+        sid = (sid - predic)/self.nPredict
+        interact = int(mod(sid, self.nInteract))
+        return [onionloc, eefloc, predic, interact]
+
+    def vals2sid(self, sVals):
+        '''
+        @brief - Given the 3 variable values making up a state, this converts it into state id 
+        '''
+        ol = sVals[0]
+        eefl = sVals[1]
+        pred = sVals[2]
+        return (ol + self.nOnionLoc * (eefl + self.nEEFLoc * pred))
+    
+    def vals2sid_interact(self, sVals):
+        '''
+        @brief - Given the 4 variable values making up a state, this converts it into state id 
+        '''
+        ol = sVals[0]
+        eefl = sVals[1]
+        pred = sVals[2]
+        interact = sVals[3]
+        return (ol + self.nOnionLoc * (eefl + self.nEEFLoc * (pred + self.nPredict * interact)))
+    
+    def vals2sGlobal(self, oloc_r, eefloc_r, pred_r, interact_r, oloc_h, eefloc_h, pred_h, interact_h):
+        '''
+        @brief - Given the variable values making up a global state, this converts it into global state id 
+        '''
+        return (oloc_r + self.nOnionLoc * (eefloc_r + self.nEEFLoc * (pred_r + self.nPredict *(interact_r + self.nInteract *(oloc_h + self.nOnionLoc * (eefloc_h + self.nEEFLoc * (pred_h + self.nPredict * interact_h)))))))
+
+    def vals2aGlobal(self, a_r, a_h):
+        '''
+        @brief - Given the individual agent actions, this converts it into action id 
+        '''
+        return a_r + self.nAAgent * a_h
+
+    def sGlobal2vals(self, s_global):
+        '''
+        @brief - Given the global state id, this converts it into the individual state variable values
+        '''
+        s_g = s_global
+        oloc_r = int(mod(s_g, self.nOnionLoc))
+        s_g = (s_g - oloc_r)/self.nOnionLoc
+        eefloc_r = int(mod(s_g, self.nEEFLoc))
+        s_g = (s_g - eefloc_r)/self.nEEFLoc
+        pred_r = int(mod(s_g, self.nPredict))
+        s_g = (s_g - pred_r)/self.nPredict
+        interact_r = int(mod(s_g, self.nInteract))
+        s_g = (s_g - interact_r)/self.nInteract
+        oloc_h = int(mod(s_g, self.nOnionLoc))
+        s_g = (s_g - oloc_h)/self.nOnionLoc
+        eefloc_h = int(mod(s_g, self.nEEFLoc))
+        s_g = (s_g - eefloc_h)/self.nEEFLoc
+        pred_h = int(mod(s_g, self.nPredict))
+        s_g = (s_g - pred_h)/self.nPredict
+        interact_h = int(mod(s_g, self.nInteract))
+        return oloc_r, eefloc_r, pred_r, interact_r, oloc_h, eefloc_h, pred_h, interact_h
+
+    def aGlobal2vals(self, a_global):
+        '''
+        @brief - Given the global action, this converts it into individual action ids
+        '''
+        a_g = a_global
+        a_r = int(mod(a_g, self.nAAgent))
+        a_g = (a_g - a_r)/self.nAAgent
+        a_h = int(mod(a_g, self.nAAgent))
+        return a_r, a_h
+
 
     def getKeyFromValue(self, my_dict, val):
         return next(
