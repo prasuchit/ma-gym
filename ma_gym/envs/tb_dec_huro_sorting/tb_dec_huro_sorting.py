@@ -107,6 +107,7 @@ class TBDecHuRoSorting(gym.Env):
         self.n_agents = len(AGENT_MEANING)
         self._max_episode_steps = max_steps
         self._step_count = None
+        self.verbose = False
         self.full_observable = full_observable
         assert not self.full_observable, "This is a Type-Based Decentralized MDP with local full observability! \
                                             Try HuRoSorting-v0 env if you're looking for fully observable multi-agent MDP."
@@ -243,6 +244,9 @@ class TBDecHuRoSorting(gym.Env):
         self.onion_in_focus_status = ['']*self.n_agents
 
         return self._get_init_obs(fixed_init)
+    
+    def render(self):
+        self.verbose = True
 
     def _check_interaction(self, s_r, s_h):
         interaction = 0
@@ -260,7 +264,7 @@ class TBDecHuRoSorting(gym.Env):
         human_state = self.vals2sid_interact([oloc_h, eefloc_h, pred_h, interaction])
         return robot_state, human_state, bool(interaction)
 
-    def step(self, agents_action, verbose=0):
+    def step(self, agents_action):
         '''
         @brief - Performs given actions and returns one_hot (joint next obsvs), reward and done
         '''
@@ -273,7 +277,7 @@ class TBDecHuRoSorting(gym.Env):
         #     self._agent_dones = True
         #     one_hot_state = self.get_global_onehot([self.sid2vals_interact(self.prev_obsv[i]) for i in self.n_agents])
         #     return one_hot_state, [self.reward] * self.n_agents, [self._agent_dones] * self.n_agents, {'info': 'Sorting complete', 'agent_types': self.prev_agent_type}
-
+        verbose = True if self.verbose else False
         if verbose:
             [o_loc_0, eef_loc_0, pred_0, inter_0] = self.sid2vals_interact(self.prev_obsv[0])
             [o_loc_1, eef_loc_1, pred_1, inter_1] = self.sid2vals_interact(self.prev_obsv[1])
@@ -287,7 +291,7 @@ class TBDecHuRoSorting(gym.Env):
         for agent_i, action in enumerate(agents_action):
             [o_loc, eef_loc, pred, inter] = self.sid2vals_interact(self.prev_obsv[agent_i])
             if self._isValidState(o_loc, eef_loc, pred, inter):
-                if self._isValidAction(o_loc, eef_loc, pred, inter, action):
+                if self._isValidAction(o_loc, eef_loc, pred, inter, action, agent_i):
                     nxt_s[agent_i] = self._findNxtState(agent_id=agent_i, onionLoc=o_loc, eefLoc=eef_loc, pred=pred, inter=inter, a=action)
                     self._setNxtType(agent_i)
                 else:
@@ -426,7 +430,7 @@ class TBDecHuRoSorting(gym.Env):
     def get_prev_obsv(self, agent_id):
         return self.prev_obsv[agent_id]
 
-    def _isValidAction(self, onionLoc, eefLoc, pred, inter, action):
+    def _isValidAction(self, onionLoc, eefLoc, pred, inter, action, agent_id):
         '''
         @brief - For each state there are a few invalid actions, returns only valid actions.
         '''
@@ -438,7 +442,7 @@ class TBDecHuRoSorting(gym.Env):
         elif action == 4:   # Pick
             return onionLoc == 1 and eefLoc != 1
         elif action in [5, 6, 7]:   # Inspect # Placeonconv # Placeinbin
-            return pred != 0 and onionLoc != 0 and onionLoc == eefLoc and eefLoc != 1
+            return pred != 0 and self.true_label[agent_id] != 0 and onionLoc != 0 and onionLoc == eefLoc and eefLoc != 1
         else:
             logger.error(f"Step {self._step_count}: Trying an impossible action are we? Better luck next time!")
             return False
@@ -476,15 +480,16 @@ class TBDecHuRoSorting(gym.Env):
         elif a == 2:
             ''' Detect_good '''
             self.true_label[agent_id] = random.choices([1,2], weights=[0.5, 0.5], k=1)[0]
+            pred = 2    # We perceive it as good, but we don't know the true label until we inspect
             if self.onion_in_focus_status[agent_id] in ['', 'Placed']:
                 self.onion_in_focus_status[agent_id] = 'Chosen'
-            return [1, 3, 2, inter]
+            return [1, 3, pred, inter]
         elif a == 3:
             ''' Detect_bad '''
             self.true_label[agent_id] = 1
             if self.onion_in_focus_status[agent_id] in ['', 'Placed']:
                 self.onion_in_focus_status[agent_id] = 'Chosen'
-            return [1, 3, 1, inter]
+            return [1, 3, self.true_label[agent_id], inter]
         elif a == 4:
             ''' Pick '''
             if self.onion_in_focus_status[agent_id] == 'Chosen':
