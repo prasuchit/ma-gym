@@ -122,8 +122,8 @@ class TBDecHuRoSorting(gym.Env):
         self.nAGlobal = self.nAAgent**self.n_agents
         self.start = np.zeros((self.n_agents, self.nSAgent))
         self.prev_obsv = [None]*self.n_agents
-        self.prev_agent_type = [None]*self.n_agents
-        self.true_label = [None]*self.n_agents
+        self.prev_agent_type = [0]*self.n_agents
+        self.true_label = [0]*self.n_agents
         self.num_onions_sorted_by_agent = [0]*self.n_agents
         self.onion_in_focus_status = ['']*self.n_agents
         random.seed(time())
@@ -238,7 +238,7 @@ class TBDecHuRoSorting(gym.Env):
         self.steps_beyond_done = None
         self.prev_agent_type = [0]*self.n_agents
         self.prev_obsv = [None]*self.n_agents
-        self.true_label = [None]*self.n_agents        
+        self.true_label = [0]*self.n_agents        
         self.num_onions_sorted_by_agent = [0]*self.n_agents
         self.onion_in_focus_status = ['']*self.n_agents
 
@@ -254,6 +254,8 @@ class TBDecHuRoSorting(gym.Env):
             interaction = 1
         if oloc_r == oloc_h == 1 and (pred_r != 0 and pred_h != 0):  # Both oloc onconv, pred known - Pick
             interaction = 1
+        assert all(value != None for value in [oloc_r, eefloc_r, pred_r, interaction]), f"Some values in agent 0's state are None: {[oloc_r, eefloc_r, pred_r, interaction]}"
+        assert all(value != None for value in [oloc_h, eefloc_h, pred_h, interaction]), f"Some values in agent 1's state are None: {[oloc_h, eefloc_h, pred_h, interaction]}"
         robot_state = self.vals2sid_interact([oloc_r, eefloc_r, pred_r, interaction])
         human_state = self.vals2sid_interact([oloc_h, eefloc_h, pred_h, interaction])
         return robot_state, human_state, bool(interaction)
@@ -266,7 +268,7 @@ class TBDecHuRoSorting(gym.Env):
         assert len(agents_action) == self.n_agents, 'Num actions != num agents.'
         self._step_count += 1
         self.reward = self.step_cost
-        
+
         # if len(self.onions_batch) == 0: # We're done sorting...
         #     self._agent_dones = True
         #     one_hot_state = self.get_global_onehot([self.sid2vals_interact(self.prev_obsv[i]) for i in self.n_agents])
@@ -296,7 +298,7 @@ class TBDecHuRoSorting(gym.Env):
                     ''' Sending all invalid actions to an impossible sink state'''
 
                     one_hot_state = [self._get_invalid_state()] * self.n_agents
-                    
+
                     return one_hot_state, [self.reward] * self.n_agents, [self._agent_dones] * self.n_agents, {'info': 'Invalid action reached a sink state.', 'agent_types': self.prev_agent_type}
             else:
                 if verbose:
@@ -305,7 +307,8 @@ class TBDecHuRoSorting(gym.Env):
                 raise ValueError(f"Invalid state: Agent {agent_i} state: {self.get_state_meanings(o_loc, eef_loc, pred, inter)}, action:{action}.\n Shouldn't be reaching an invalid state!")
 
         self._get_reward(agents_action)
-
+        assert all(value != None for value in nxt_s[0]), f"Some values in agent 0's state are None: {nxt_s[0]}"
+        assert all(value != None for value in nxt_s[1]), f"Some values in agent 1's state are None: {nxt_s[1]}"
         sid_rob = self.vals2sid_interact(sVals = nxt_s[0])
         sid_hum = self.vals2sid_interact(sVals = nxt_s[1])
         sid_rob, sid_hum, is_interactive = self._check_interaction(sid_rob, sid_hum) # Check if the next state we've reached is still an interactive state.
@@ -405,6 +408,9 @@ class TBDecHuRoSorting(gym.Env):
             self._set_prev_agent_type(agent_id, 1)
             
     def get_other_agents_types(self, curr_ag_id):
+        '''
+        @brief Given a particular agent id, returns a list of all the other agents' true type.
+        '''
         return [
             self.prev_agent_type[ag_id]
             for ag_id in range(self.n_agents)
@@ -424,7 +430,7 @@ class TBDecHuRoSorting(gym.Env):
         '''
         @brief - For each state there are a few invalid actions, returns only valid actions.
         '''
-        assert action <= 5, 'Unavailable action. Check if action is within num actions'
+        assert action <= self.nAAgent, 'Unavailable action. Check if action is within num actions'
         if action == 0: # Noop, this can be done from anywhere.
             return True
         elif action in [1,2,3]:   # Detect, Detect_good, Detect_bad
