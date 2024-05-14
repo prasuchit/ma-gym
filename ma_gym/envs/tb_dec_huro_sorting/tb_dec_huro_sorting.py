@@ -21,8 +21,10 @@ AGENT_MEANING = {
 }
 
 AGENT_TYPE = {
-    0: 'Non-Fatigued',
-    1: 'Fatigued'
+    0: 'Unfatigued',
+    1: 'Fatigued',
+    2: 'Collaborative',
+    3: 'Super-Collaborative',
 }
 
 ONIONLOC = {
@@ -106,7 +108,7 @@ class TBDecHuRoSorting(gym.Env):
         self.name = 'TBDecHuRoSorting'
         self.n_agents = len(AGENT_MEANING)
         self._max_episode_steps = max_steps
-        self._step_count = None
+        self._step_count = 0
         self.verbose = False
         self.full_observable = full_observable
         assert not self.full_observable, "This is a Type-Based Decentralized MDP with local full observability! \
@@ -123,10 +125,11 @@ class TBDecHuRoSorting(gym.Env):
         self.nAGlobal = self.nAAgent**self.n_agents
         self.start = np.zeros((self.n_agents, self.nSAgent))
         self.prev_obsv = [None]*self.n_agents
-        self.prev_agent_type = [0]*self.n_agents
+        self.prev_agent_type = [2, 0]
         self.true_label = [0]*self.n_agents
         self.num_onions_sorted_by_agent = [0]*self.n_agents
         self.onion_in_focus_status = ['']*self.n_agents
+        self.belief_prob_counter = 0
         random.seed(time())
         # self.onions_batch = [random.choice([1, 2]) for _ in range(100)] # 1 - Blemished onion, 2 - Unblemished onion.
         self.action_space = MultiAgentActionSpace([spaces.Discrete(self.nAAgent) for _ in range(self.n_agents)])
@@ -147,7 +150,7 @@ class TBDecHuRoSorting(gym.Env):
         @brief Provides joint reward for appropriate team behavior.
         '''
         [_, _, _, inter_rob] = self.sid2vals_interact(self.prev_obsv[0])
-        [_, _, _, _] = self.sid2vals_interact(self.prev_obsv[1])
+        [o_loc_hum, eef_loc_hum, _, _] = self.sid2vals_interact(self.prev_obsv[1])
         
         act_rob = acts[0]
         act_hum = acts[1]
@@ -158,17 +161,26 @@ class TBDecHuRoSorting(gym.Env):
         rob_type = self.prev_agent_type[0]
         hum_type = self.prev_agent_type[1]
         
+        if self.verbose:
+            agent_0, type_0 = self.get_agent_meanings(0, self.prev_agent_type[0])
+            agent_1, type_1 = self.get_agent_meanings(1, self.prev_agent_type[1])
+            print("**"*10, " Reward function ", "**"*10, "\n")
+            print(f'Step {self._step_count}: Agent {agent_0} type: {type_0} | Agent {agent_1} type: {type_1}\n')
+            print(f'Step {self._step_count}: Agent {agent_0} true_pred: {PREDICTIONS[true_pred_rob]} | Agent {agent_1} true_pred: {PREDICTIONS[true_pred_hum]}\n')
+            print(f'Step {self._step_count}: Agent {agent_0} interaction: {bool(inter_rob)} | Agent {agent_1} interaction: {bool(inter_rob)}\n')
+            print(f'Step {self._step_count}: Agent {agent_0} action: {self.get_action_meanings(act_rob)} | Agent {agent_1} action: {self.get_action_meanings(act_hum)}\n')
+            print("**"*30, "\n")
+                    
         
         ######## INDEPENDENT FEATURES ########
 
         ##################### Robot #########################
-        if rob_type == 0:
-            
+        if rob_type == 2:   # Collaborative type            
             # Bad onion place in bin
-            if true_pred_rob == 1 and act_rob == 5:
+            if true_pred_rob == 1 and act_rob == 7:
                 self.reward += 1
             # Good onion place on conv
-            elif true_pred_rob == 2 and act_rob == 4:
+            elif true_pred_rob == 2 and act_rob == 6:
                 self.reward += 1
                 
             # # Currently picked, find good, inspect
@@ -176,40 +188,56 @@ class TBDecHuRoSorting(gym.Env):
             #     self.reward += 1 
             
             # Bad onion place on conv
-            elif true_pred_rob == 1 and act_rob == 4:
+            elif true_pred_rob == 1 and act_rob == 6:
                 self.reward -= 1
             # Good onion place in bin
-            elif true_pred_rob == 2 and act_rob == 5:
+            elif true_pred_rob == 2 and act_rob == 7:
                 self.reward -= 1
+        elif rob_type == 3:    # Super-collaborative type
+            # If bad onion is chosen by super-collab robot
+            if true_pred_rob == 1:
+                self.reward -= 10
+            else:
+                # Good onion place on conv
+                if true_pred_rob == 2 and act_rob == 6:
+                    self.reward += 1
+                # Good onion place in bin
+                elif true_pred_rob == 2 and act_rob == 7:
+                    self.reward -= 1
         else:
             raise ValueError(f'Robot cannot be {AGENT_TYPE[rob_type]}.')
 
         ##################### Human #########################
         if hum_type == 0:   # Unfatigued
             # Bad onion place in bin
-            if true_pred_hum == 1 and act_hum == 5:
+            if true_pred_hum == 1 and act_hum == 7:
                 self.reward += 1
             # Good onion place on conv
-            elif true_pred_hum == 2 and act_hum == 4:
+            elif true_pred_hum == 2 and act_hum == 6:
                 self.reward += 1
             # Bad onion place on conv
-            elif true_pred_hum == 1 and act_hum == 4:
+            elif true_pred_hum == 1 and act_hum == 6:
                 self.reward -= 1
             # Good onion place in bin
-            elif true_pred_hum == 2 and act_hum == 5:
+            elif true_pred_hum == 2 and act_hum == 7:
                 self.reward -= 1
-        else:       # Fatigued
+        elif hum_type == 1:       # Fatigued
             # If good onion is chosen by fatigued human
             if true_pred_hum == 2:
                 self.reward -= 10
             else:
+                # If human just finished sorting an onion, he takes a break
+                if o_loc_hum == 0 and eef_loc_hum in [0,1] and act_hum == 0:
+                    self.reward += 1
                 # Bad onion place in bin
-                if true_pred_hum == 1 and act_hum == 5:
+                elif true_pred_hum == 1 and act_hum == 7:
                     self.reward += 1
                 # Bad onion place on conv
-                elif true_pred_hum == 1 and act_hum == 4:
+                elif true_pred_hum == 1 and act_hum == 6:
                     self.reward -= 1
-
+        else:
+            raise ValueError(f'Human cannot be {AGENT_TYPE[rob_type]}.')
+        
         ######## DEPENDENT FEATURES ########
 
         # # Both do detect simultaneously
@@ -237,11 +265,12 @@ class TBDecHuRoSorting(gym.Env):
 
         self._agent_dones = False
         self.steps_beyond_done = None
-        self.prev_agent_type = [0]*self.n_agents
+        self.prev_agent_type = [2, 0]
         self.prev_obsv = [None]*self.n_agents
         self.true_label = [0]*self.n_agents        
         self.num_onions_sorted_by_agent = [0]*self.n_agents
         self.onion_in_focus_status = ['']*self.n_agents
+        self.belief_prob_counter = 0
 
         return self._get_init_obs(fixed_init)
     
@@ -277,13 +306,13 @@ class TBDecHuRoSorting(gym.Env):
         #     self._agent_dones = True
         #     one_hot_state = self.get_global_onehot([self.sid2vals_interact(self.prev_obsv[i]) for i in self.n_agents])
         #     return one_hot_state, [self.reward] * self.n_agents, [self._agent_dones] * self.n_agents, {'info': 'Sorting complete', 'agent_types': self.prev_agent_type}
-        verbose = True if self.verbose else False
+        verbose = bool(self.verbose)
         if verbose:
             [o_loc_0, eef_loc_0, pred_0, inter_0] = self.sid2vals_interact(self.prev_obsv[0])
             [o_loc_1, eef_loc_1, pred_1, inter_1] = self.sid2vals_interact(self.prev_obsv[1])
             agent_0, type_0 = self.get_agent_meanings(0, self.prev_agent_type[0])
             agent_1, type_1 = self.get_agent_meanings(1, self.prev_agent_type[1])
-            print(f'Step {self._step_count}: Agent {agent_0} state: {self.get_state_meanings(o_loc_0, eef_loc_0, pred_0, inter_0)} | Agent {agent_1} state: {self.get_state_meanings(o_loc_1, eef_loc_1, pred_1, inter_1)}')
+            print(f'Step {self._step_count}: Agent {agent_0} state: {self.get_state_meanings(o_loc_0, eef_loc_0, pred_0, inter_0)} | Agent {agent_1} state: {self.get_state_meanings(o_loc_1, eef_loc_1, pred_1, inter_1)}\n')
             print(f'Step {self._step_count}: Agent {agent_0} action: {self.get_action_meanings(agents_action[0])} | Agent {agent_1} action: {self.get_action_meanings(agents_action[1])}\n')
             print(f'Step {self._step_count}: Agent {agent_0} type: {type_0} | Agent {agent_1} type: {type_1}\n')
 
@@ -293,7 +322,6 @@ class TBDecHuRoSorting(gym.Env):
             if self._isValidState(o_loc, eef_loc, pred, inter):
                 if self._isValidAction(o_loc, eef_loc, pred, inter, action, agent_i):
                     nxt_s[agent_i] = self._findNxtState(agent_id=agent_i, onionLoc=o_loc, eefLoc=eef_loc, pred=pred, inter=inter, a=action)
-                    self._setNxtType(agent_i)
                 else:
                     if verbose:
                         logger.error(f"Step {self._step_count}: Invalid action: {self.get_action_meanings(action)}, in current state: {self.get_state_meanings(o_loc, eef_loc, pred, inter)}, {AGENT_MEANING[agent_i]} agent can't transition anywhere else with this. Staying put and ending episode!")
@@ -318,14 +346,19 @@ class TBDecHuRoSorting(gym.Env):
         sid_rob, sid_hum, is_interactive = self._check_interaction(sid_rob, sid_hum) # Check if the next state we've reached is still an interactive state.
         self._set_prev_obsv(0, sid_rob)
         self._set_prev_obsv(1, sid_hum)
+        self._setNxtType(1) # Robot changes its type based on human, so update this first
+        self._setNxtType(0)
+        if self.prev_agent_type[1] == 1 and agents_action[1] == 0:
+            self.belief_prob_counter += 1 
 
-        one_hot_state = self.get_global_onehot([self.sid2vals_interact(sid_rob), self.sid2vals_interact(sid_hum)])
+        one_hot_state = self.get_global_onehot([self.sid2vals_interact(sid_rob), \
+                                                    self.sid2vals_interact(sid_hum)])
 
         if self._step_count >= self._max_episode_steps:
             self._agent_dones = True
 
-        if self.reward < self.step_cost:
-            self._agent_dones = True
+        # if self.reward < self.step_cost:
+        #     self._agent_dones = True
 
         if self.steps_beyond_done is None and self._agent_dones:
             self.steps_beyond_done = 0
@@ -337,6 +370,12 @@ class TBDecHuRoSorting(gym.Env):
                     " steps are undefined behavior.")
             self.steps_beyond_done += 1
             self.reward = 0
+
+        if verbose:
+            agent_0, type_0 = self.get_agent_meanings(0, self.prev_agent_type[0])
+            agent_1, type_1 = self.get_agent_meanings(1, self.prev_agent_type[1])
+            print(f'Step {self._step_count}: Agent {agent_0} reward: {self.reward} | Agent {agent_1} reward: {self.reward}\n')
+            print(f'Step {self._step_count}: Agent {agent_0} done: {self._agent_dones} | Agent {agent_1} done: {self._agent_dones}\n')        
 
         return one_hot_state, [self.reward] * self.n_agents, [self._agent_dones] * self.n_agents, {'info': 'Valid action, valid next state.', 'agent_types': self.prev_agent_type, 'interactive': is_interactive}
 
@@ -368,7 +407,7 @@ class TBDecHuRoSorting(gym.Env):
             self._update_start()
             s_r, s_h = self._sample_start()
 
-        s_r, s_h, _ = self._check_interaction(s_r, s_h) # System should never start in an interactive state, so we can assume interaction = False
+        s_r, s_h, _ = self._check_interaction(s_r, s_h)
 
         self._set_prev_obsv(0, s_r)
         self._set_prev_obsv(1, s_h)
@@ -377,6 +416,22 @@ class TBDecHuRoSorting(gym.Env):
 
         [onion_hum, eef_hum, pred_hum, inter_hum] = self.sid2vals_interact(s_h)
 
+        if onion_rob != 0 and pred_rob != 0:
+            if onion_rob == eef_rob:    # Picked
+                self.onion_in_focus_status[0] = 'Inspected' if eef_rob == 2 else 'Picked'
+            else:
+                self.onion_in_focus_status[0] = 'Chosen'
+            
+            self.true_label[0] = 1 if pred_rob == 1 else random.choices([1,2], weights=[0.5, 0.5], k=1)[0]            
+                
+        if onion_hum != 0 and pred_hum != 0:
+            if onion_hum == eef_hum:    # Picked
+                self.onion_in_focus_status[1] = 'Inspected' if eef_hum == 2 else 'Picked'
+            else:
+                self.onion_in_focus_status[1] = 'Chosen'
+
+            self.true_label[1] = 1 if pred_hum == 1 else random.choices([1,2], weights=[0.5, 0.5], k=1)[0]
+            
         return self.get_global_onehot([[onion_rob, eef_rob, pred_rob, inter_rob], [onion_hum, eef_hum, pred_hum, inter_hum]])
 
     def _sample_start(self):
@@ -406,12 +461,16 @@ class TBDecHuRoSorting(gym.Env):
         return bool(self._isValidState(onionLoc, eefLoc, pred, inter) and eefLoc != 1)
     
     def _setNxtType(self, agent_id):        
-        if self.prev_agent_type[agent_id] == 1: # Fatigued agent cannot become unfatigued during the same episode.
+        if self.prev_agent_type[agent_id] in [1,3]: 
+            # Fatigued agent cannot become unfatigued during the same episode.
+            # Consequently, super collaborative robot cannot become less collaborative in the same episode.
             return
         elif agent_id == 1 and self.num_onions_sorted_by_agent[agent_id] > 2:
             self._set_prev_agent_type(agent_id, 1)
-            
-    def get_other_agents_types(self, curr_ag_id):
+        elif agent_id == 0 and self.prev_agent_type[agent_id] == 2 and self.prev_agent_type[~agent_id] == 1:
+            self._set_prev_agent_type(agent_id, 3)
+    
+    def get_other_agents_types_ground_truth(self, curr_ag_id):
         '''
         @brief Given a particular agent id, returns a list of all the other agents' true type.
         '''
@@ -420,7 +479,23 @@ class TBDecHuRoSorting(gym.Env):
             for ag_id in range(self.n_agents)
             if ag_id != curr_ag_id
         ]
-
+    
+            
+    def get_other_agents_types_for_belief_training(self, curr_ag_id):
+        '''
+        @brief Given a particular agent id, returns a list of all the other agents' probable type.
+        This method is only used to train the belief network and make it learn the belief update distribution.
+        This is not used during policy training or execution.
+        '''
+        # If human is asking for robot's type, always return groundtruth; if robot is asking for human's type
+        # after a fatigued human has done 3 NoOp actions, always return groundtruth; otherwise return the type
+        # fatigued or not with certain probability.
+        return [
+            self.prev_agent_type[ag_id] if ag_id == 0 or self.belief_prob_counter >= 3
+            else random.choices([0, 1], weights=[(3 - self.belief_prob_counter) / 3, self.belief_prob_counter / 3], k=1)[0]
+            for ag_id in range(self.n_agents) if ag_id != curr_ag_id
+        ]
+    
     def _set_prev_obsv(self, agent_id, s_id):
         self.prev_obsv[agent_id] = copy.copy(s_id)
         
@@ -469,48 +544,52 @@ class TBDecHuRoSorting(gym.Env):
         random.seed(time())
         if a == 0:
             ''' Noop '''
+            # Noop takes eef home to induce some change in the state so that the logic doesn't get stuck in a loop
+            eefLoc = 3
+            if onionLoc == eefLoc:
+                onionLoc = eefLoc
             return [onionLoc, eefLoc, pred, inter].copy()
         elif a == 1:
-            ''' Detect '''
-            self.true_label[agent_id] = random.choices([1,2], weights=[0.5, 0.5], k=1)[0]
-            pred = self.true_label[agent_id] if self.true_label[agent_id] == 1 else random.choices([1,2], weights=[0.5, 0.5], k=1)[0]
-            if self.onion_in_focus_status[agent_id] in ['', 'Placed']:
-                self.onion_in_focus_status[agent_id] = 'Chosen'
+            ''' Detect_any '''
+            pred = random.choices([1,2], weights=[0.5, 0.5], k=1)[0]
+            self.true_label[agent_id] = pred if pred == 1 else random.choices([1,2], weights=[0.5, 0.5], k=1)[0]
+            assert self.onion_in_focus_status[agent_id] in ['', 'Placed'], f"Trying to choose an onion in the wrong state: {self.get_state_meanings(onionLoc, eefLoc, pred, inter)}"
+            self.onion_in_focus_status[agent_id] = 'Chosen'
             return [1, 3, pred, inter]
         elif a == 2:
             ''' Detect_good '''
-            self.true_label[agent_id] = random.choices([1,2], weights=[0.5, 0.5], k=1)[0]
             pred = 2    # We perceive it as good, but we don't know the true label until we inspect
-            if self.onion_in_focus_status[agent_id] in ['', 'Placed']:
-                self.onion_in_focus_status[agent_id] = 'Chosen'
+            self.true_label[agent_id] = random.choices([1,2], weights=[0.5, 0.5], k=1)[0]
+            assert self.onion_in_focus_status[agent_id] in ['', 'Placed'], f"Trying to choose an onion in the wrong state: {self.get_state_meanings(onionLoc, eefLoc, pred, inter)}"
+            self.onion_in_focus_status[agent_id] = 'Chosen'
             return [1, 3, pred, inter]
         elif a == 3:
             ''' Detect_bad '''
             self.true_label[agent_id] = 1
-            if self.onion_in_focus_status[agent_id] in ['', 'Placed']:
-                self.onion_in_focus_status[agent_id] = 'Chosen'
+            assert self.onion_in_focus_status[agent_id] in ['', 'Placed'], f"Trying to choose an onion in the wrong state: {self.get_state_meanings(onionLoc, eefLoc, pred, inter)}"
+            self.onion_in_focus_status[agent_id] = 'Chosen'
             return [1, 3, self.true_label[agent_id], inter]
         elif a == 4:
             ''' Pick '''
-            if self.onion_in_focus_status[agent_id] == 'Chosen':
-                self.onion_in_focus_status[agent_id] = 'Picked'
+            assert self.onion_in_focus_status[agent_id] in ['Chosen'], f"Trying to pick an onion in the wrong state: {self.get_state_meanings(onionLoc, eefLoc, pred, inter)}"
+            self.onion_in_focus_status[agent_id] = 'Picked'
             return [3, 3, pred, inter]
         elif a == 5:
             ''' Inspect '''
-            if self.onion_in_focus_status[agent_id] == 'Picked':
-                self.onion_in_focus_status[agent_id] = 'Inspected'
+            assert self.onion_in_focus_status[agent_id] in ['Picked'], f"Trying to inspect an onion in the wrong state: {self.get_state_meanings(onionLoc, eefLoc, pred, inter)}"
+            self.onion_in_focus_status[agent_id] = 'Inspected'
             return [2, 2, self.true_label[agent_id], inter]
         elif a == 6:
             ''' PlaceOnConv '''
-            if self.onion_in_focus_status[agent_id] in ['Picked', 'Inspected']:
-                self.onion_in_focus_status[agent_id] = 'Placed'
-                self.num_onions_sorted_by_agent[agent_id] += 1
+            assert self.onion_in_focus_status[agent_id] in ['Picked', 'Inspected'], f"Trying to place an onion in the wrong state: {self.get_state_meanings(onionLoc, eefLoc, pred, inter)}"
+            self.onion_in_focus_status[agent_id] = 'Placed'
+            self.num_onions_sorted_by_agent[agent_id] += 1
             return [0, 1, 0, inter]
         elif a == 7:
             ''' PlaceInBin '''
-            if self.onion_in_focus_status[agent_id] in ['Picked', 'Inspected']:
-                self.onion_in_focus_status[agent_id] = 'Placed'
-                self.num_onions_sorted_by_agent[agent_id] += 1
+            assert self.onion_in_focus_status[agent_id] in ['Picked', 'Inspected'], f"Trying to place an onion in the wrong state: {self.get_state_meanings(onionLoc, eefLoc, pred, inter)}"
+            self.onion_in_focus_status[agent_id] = 'Placed'
+            self.num_onions_sorted_by_agent[agent_id] += 1
             return [0, 0, 0, inter]
 
     # def _get_detected_state(self, agent_id, onionLoc, eefLoc, pred, inter, action):
