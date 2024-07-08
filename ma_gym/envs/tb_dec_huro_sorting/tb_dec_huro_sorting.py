@@ -159,6 +159,8 @@ class TBDecHuRoSorting(gym.Env):
         self.prev_obsv = [None]*self.n_agents
         self._agent_type = [2, 0]
         self.num_onions_sorted_by_agent = [0]*self.n_agents
+        self.indicated = {ag_id: 0 for ag_id in range(self.n_agents)}
+        self.recovery_time_count = 0
         # self.true_label = [0]*self.n_agents
         # self.onion_in_focus_status = ['']*self.n_agents
         # self.belief_prob_counter = 0
@@ -172,7 +174,6 @@ class TBDecHuRoSorting(gym.Env):
                                                             for _ in range(self.n_agents)])
         self.step_cost = 0.0
         self.reward = self.step_cost
-        self.recovery_time_count = 0
         self._full_obs = None
         self._agent_dones = None
         self.steps_beyond_done = None
@@ -270,6 +271,7 @@ class TBDecHuRoSorting(gym.Env):
         self.prev_obsv = [None]*self.n_agents
         self.num_onions_sorted_by_agent = [0]*self.n_agents
         self.recovery_time_count = 0
+        self.indicated = {ag_id: 0 for ag_id in range(self.n_agents)}
         # self.true_label = [0]*self.n_agents        
         # self.onion_in_focus_status = ['']*self.n_agents
         # self.belief_prob_counter = 0
@@ -319,7 +321,7 @@ class TBDecHuRoSorting(gym.Env):
             [o_loc, eef_loc, pred, inter, self_type, indicate] = self.sid2vals(self.prev_obsv[agent_i])
             if self._isValidState(o_loc, eef_loc, pred, inter, self_type, indicate):
                 if self._isValidAction(o_loc, eef_loc, pred, inter, self_type, indicate, action, agent_i):
-                    nxt_s[agent_i] = self._findNxtState(agent_id=agent_i, onionLoc=o_loc, eefLoc=eef_loc, pred=pred, inter=inter, indicate=indicate, self_type=self_type, a=action)
+                    nxt_s[agent_i] = self._findNxtState(agent_id=agent_i, onionLoc=o_loc, eefLoc=eef_loc, pred=pred, inter=inter, indicate=indicate, ag_type=self_type, a=action)
                 else:
                     if verbose:
                         logger.error(f"Step {self._step_count}: Invalid action: {self.get_action_meanings(action)}, in current state: {self.get_state_meanings(o_loc, eef_loc, pred, inter, self_type, indicate, ag_id=agent_i)}, {AGENT_MEANING[agent_i]} agent can't transition anywhere else with this. Staying put and ending episode!")
@@ -452,7 +454,8 @@ class TBDecHuRoSorting(gym.Env):
         '''
         @brief - Checks if a given state is a valid start state or not.
         '''
-        return bool(self._isValidState(onionLoc, eefLoc, pred, inter, ag_type, indicate) and eefLoc != 1 and ag_type != 1 and indicate != 1 and inter != 1)
+        return bool(self._isValidState(onionLoc, eefLoc, pred, inter, ag_type, indicate) \
+            and eefLoc != 1 and ag_type != 1 and indicate != 1 and inter != 1)
     
     def _setNxtType(self, agent_id):        
         if agent_id == 1:
@@ -480,20 +483,16 @@ class TBDecHuRoSorting(gym.Env):
             if ag_id != curr_ag_id
         ]    
             
-    # def get_other_agents_types_for_belief_training(self, curr_ag_id):
-    #     '''
-    #     @brief Given a particular agent id, returns a list of all the other agents' probable type.
-    #     This method is only used to train the belief network and make it learn the belief update distribution.
-    #     This is not used during policy training or execution.
-    #     '''
-    #     # If human is asking for robot's type, always return groundtruth; if robot is asking for human's type
-    #     # after a fatigued human has done 3 NoOp actions, always return groundtruth; otherwise return the type
-    #     # fatigued or not with certain probability.
-    #     return [
-    #         self._agent_type[ag_id] if ag_id == 0 or self.belief_prob_counter >= 3
-    #         else random.choices([0, 1], weights=[(3 - self.belief_prob_counter) / 3, self.belief_prob_counter / 3], k=1)[0]
-    #         for ag_id in range(self.n_agents) if ag_id != curr_ag_id
-    #     ]
+    def get_other_agents_types_for_belief_training(self, curr_ag_id):
+        '''
+        @brief Given a particular agent id, returns a list of all the other agents' probable type.
+        This method is only used to train the belief network and make it learn the belief distribution.
+        This is not used during policy training or execution.
+        '''
+        return [
+            random.choices([self._agent_type[ag_id], not self._agent_type[ag_id]], weights=[0.95, 0.05], k=1)[0]
+            for ag_id in range(self.n_agents) if ag_id != curr_ag_id
+        ]
     
     def _set_prev_obsv(self, agent_id, s_id):
         self.prev_obsv[agent_id] = copy.copy(s_id)
@@ -597,6 +596,8 @@ class TBDecHuRoSorting(gym.Env):
         elif a in [8, 9]:
             ''' Indicative actions for the other agent '''            
             indicate = 1
+        
+        self.indicated[agent_id] = indicate
         
         return [onionLoc, eefLoc, pred, inter, ag_type, indicate].copy()
 
