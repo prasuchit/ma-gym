@@ -267,7 +267,7 @@ class TBDecHuRoSorting(gym.Env):
 
         self._agent_dones = False
         self.steps_beyond_done = None
-        self._agent_type = [2, 0]
+        self._agent_type = [0, 0]
         self.prev_obsv = [None]*self.n_agents
         self.num_onions_sorted_by_agent = [0]*self.n_agents
         self.recovery_time_count = 0
@@ -486,11 +486,11 @@ class TBDecHuRoSorting(gym.Env):
     def get_other_agents_types_for_belief_training(self, curr_ag_id):
         '''
         @brief Given a particular agent id, returns a list of all the other agents' probable type.
-        This method is only used to train the belief network and make it learn the belief distribution.
+        This method is only used to train the belief network to make it learn the belief distribution.
         This is not used during policy training or execution.
         '''
         return [
-            random.choices([self._agent_type[ag_id], not self._agent_type[ag_id]], weights=[0.95, 0.05], k=1)[0]
+            random.choices(np.arange(self.nAgent_type), weights=[0.95, 0.05], k=1)[0]
             for ag_id in range(self.n_agents) if ag_id != curr_ag_id
         ]
     
@@ -541,7 +541,7 @@ class TBDecHuRoSorting(gym.Env):
                 eefLoc = 3
             else:
                 if self.verbose:
-                    print(f"Agent {agent_id} doing NoOp action in state: {self.get_state_meanings(onionLoc, eefLoc, pred, inter, ag_type, indicate)}!\nNoOp should only be done after sorting an onion and upon interaction detection...\n")
+                    print(f"Agent {agent_id} doing NoOp action in state: {self.get_state_meanings(onionLoc, eefLoc, pred, inter, ag_type, indicate)}!\nNoOp should only be done by the robot upon interaction detection...\n")
                 pass                                
         elif a == 1:
             ''' Detect_any '''
@@ -625,8 +625,12 @@ class TBDecHuRoSorting(gym.Env):
         assert action <= self.nAAgent, 'Unavailable action. Check if action is within num actions'
         if action == 0: # Noop, this can be done from anywhere.
             return True
-        elif action in [1,2,3]:   # Detect_any, Detect_good, Detect_bad
-            return pred == 0 or onionLoc == 0
+        elif action == 1:   # Detect_any, Detect_good, Detect_bad
+            return (pred == 0 or onionLoc == 0) and ag_type == 0
+        elif action == 2:
+            return (pred == 0 or onionLoc == 0) and (agent_id == 0 and ag_type == 1)
+        elif action == 3:
+            return (pred == 0 or onionLoc == 0) and (agent_id == 1 and ag_type == 1)
         elif action == 4:   # Pick
             return onionLoc == 1 and eefLoc != 1
         elif action in [5, 6, 7]:   # Inspect # Placeonconv # Placeinbin
