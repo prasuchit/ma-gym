@@ -174,6 +174,7 @@ class TBDecHuRoSorting(gym.Env):
                                                             for _ in range(self.n_agents)])
         self.step_cost = 0.0
         self.reward = self.step_cost
+        self.nxt_s = {}
         self._full_obs = None
         self._agent_dones = None
         self.steps_beyond_done = None
@@ -195,15 +196,15 @@ class TBDecHuRoSorting(gym.Env):
         # rob_type = self._agent_type[0]
         # hum_type = self._agent_type[1]
         
-        if self.verbose:
-            agent_0, type_0 = self.get_agent_meanings(0, self._agent_type[0])
-            agent_1, type_1 = self.get_agent_meanings(1, self._agent_type[1])
-            print("**"*10, " Reward function ", "**"*10, "\n")
-            print(f'Step {self._step_count}: Agent {agent_0} type: {type_0} | Agent {agent_1} type: {type_1}\n')
-            print(f'Step {self._step_count}: Agent {agent_0} pred: {PREDICTIONS[pred_rob]} | Agent {agent_1} pred: {PREDICTIONS[pred_hum]}\n')
-            print(f'Step {self._step_count}: Agent {agent_0} interaction: {bool(inter_rob)} | Agent {agent_1} interaction: {bool(inter_rob)}\n')
-            print(f'Step {self._step_count}: Agent {agent_0} action: {self.get_action_meanings(act_rob)} | Agent {agent_1} action: {self.get_action_meanings(act_hum)}\n')
-            print("**"*30, "\n")
+        # if self.verbose:
+        #     agent_0, type_0 = self.get_agent_meanings(0, self._agent_type[0])
+        #     agent_1, type_1 = self.get_agent_meanings(1, self._agent_type[1])
+        #     print("**"*10, " Reward function ", "**"*10, "\n")
+        #     print(f'Step {self._step_count}: Agent {agent_0} type: {type_0} | Agent {agent_1} type: {type_1}\n')
+        #     print(f'Step {self._step_count}: Agent {agent_0} pred: {PREDICTIONS[pred_rob]} | Agent {agent_1} pred: {PREDICTIONS[pred_hum]}\n')
+        #     print(f'Step {self._step_count}: Agent {agent_0} interaction: {bool(inter_rob)} | Agent {agent_1} interaction: {bool(inter_rob)}\n')
+        #     print(f'Step {self._step_count}: Agent {agent_0} action: {self.get_action_meanings(act_rob)} | Agent {agent_1} action: {self.get_action_meanings(act_hum)}\n')
+        #     print("**"*30, "\n")
         
         ######## INDEPENDENT FEATURES ########
 
@@ -258,7 +259,7 @@ class TBDecHuRoSorting(gym.Env):
         if inter_rob == 1 and act_rob != 0:
             self.reward -= 3
 
-    def reset(self, fixed_init=False):
+    def reset(self, fixed_init=True):
         '''
         @brief - Just setting all params to defaults and returning a valid start obsv.
         '''
@@ -311,20 +312,20 @@ class TBDecHuRoSorting(gym.Env):
             [o_loc_1, eef_loc_1, pred_1, inter_1, self_type_1, indicate_1] = self.sid2vals(self.prev_obsv[1])
             agent_0, type_0 = self.get_agent_meanings(0, self._agent_type[0])
             agent_1, type_1 = self.get_agent_meanings(1, self._agent_type[1])
-            print(f'Step {self._step_count}: Agent {agent_0} state: {self.get_state_meanings(o_loc_0, eef_loc_0, pred_0, inter_0, self_type_0, indicate_0, ag_id=0)} \
-                | Agent {agent_1} state: {self.get_state_meanings(o_loc_1, eef_loc_1, pred_1, inter_1, self_type_1, indicate_1, ag_id=1)}\n')
+            print("**"*25, "Start of Step function", "**"*25)
+            print(f'Step {self._step_count}: Agent {agent_0} state: {self.get_state_meanings(o_loc_0, eef_loc_0, pred_0, inter_0, self_type_0, indicate_0, ag_id=0)} | Agent {agent_1} state: {self.get_state_meanings(o_loc_1, eef_loc_1, pred_1, inter_1, self_type_1, indicate_1, ag_id=1)}\n')
             print(f'Step {self._step_count}: Agent {agent_0} action: {self.get_action_meanings(agents_action[0], ag_id=0)} | Agent {agent_1} action: {self.get_action_meanings(agents_action[1], ag_id=1)}\n')
             print(f'Step {self._step_count}: Agent {agent_0} type: {type_0} | Agent {agent_1} type: {type_1}\n')
 
-        nxt_s = {}
+        self.nxt_s = {}
         for agent_i, action in enumerate(agents_action):
             [o_loc, eef_loc, pred, inter, self_type, indicate] = self.sid2vals(self.prev_obsv[agent_i])
             if self._isValidState(o_loc, eef_loc, pred, inter, self_type, indicate):
                 if self._isValidAction(o_loc, eef_loc, pred, inter, self_type, indicate, action, agent_i):
-                    nxt_s[agent_i] = self._findNxtState(agent_id=agent_i, onionLoc=o_loc, eefLoc=eef_loc, pred=pred, inter=inter, indicate=indicate, ag_type=self_type, a=action)
+                    self.nxt_s[agent_i] = self._findNxtState(agent_id=agent_i, onionLoc=o_loc, eefLoc=eef_loc, pred=pred, inter=inter, indicate=indicate, ag_type=self_type, a=action)
                 else:
                     if verbose:
-                        logger.error(f"Step {self._step_count}: Invalid action: {self.get_action_meanings(action)}, in current state: {self.get_state_meanings(o_loc, eef_loc, pred, inter, self_type, indicate, ag_id=agent_i)}, {AGENT_MEANING[agent_i]} agent can't transition anywhere else with this. Staying put and ending episode!")
+                        logger.error(f"Step {self._step_count}: Invalid action: {self.get_action_meanings(action, ag_id=agent_i)}, in current state: {self.get_state_meanings(o_loc, eef_loc, pred, inter, self_type, indicate, ag_id=agent_i)}, {AGENT_MEANING[agent_i]} agent can't transition anywhere else with this. Staying put and ending episode!")
                     self._agent_dones = True
 
                     ''' Sending all invalid actions to an impossible sink state'''
@@ -338,16 +339,15 @@ class TBDecHuRoSorting(gym.Env):
                 self._agent_dones = True
                 raise ValueError(f"Invalid state: Agent {agent_i} state: {self.get_state_meanings(o_loc, eef_loc, pred, inter, self_type, indicate, ag_id=agent_i)}, action:{action}.\n Shouldn't be reaching an invalid state!")
 
+        self._setNxtType(1) # Human type updates exogenously first and robot adjusts accordingly
         self._get_reward(agents_action)
-        assert all(value != None for value in nxt_s[0]), f"Some values in agent 0's state are None: {nxt_s[0]}"
-        assert all(value != None for value in nxt_s[1]), f"Some values in agent 1's state are None: {nxt_s[1]}"
-        sid_rob = self.vals2sid(sVals = nxt_s[0])
-        sid_hum = self.vals2sid(sVals = nxt_s[1])
+        assert all(value != None for value in self.nxt_s[0]), f"Some values in agent 0's state are None: {self.nxt_s[0]}"
+        assert all(value != None for value in self.nxt_s[1]), f"Some values in agent 1's state are None: {self.nxt_s[1]}"
+        sid_rob = self.vals2sid(sVals = self.nxt_s[0])
+        sid_hum = self.vals2sid(sVals = self.nxt_s[1])
         sid_rob, sid_hum, is_interactive = self._check_interaction(sid_rob, sid_hum) # Check if the next state we've reached is still an interactive state.
         self._set_prev_obsv(0, sid_rob)
         self._set_prev_obsv(1, sid_hum)
-        self._setNxtType(1) # Robot changes its type based on human, so update human type first
-        self._setNxtType(0)
         one_hot_state = self.get_global_onehot([self.sid2vals(sid_rob), self.sid2vals(sid_hum)])
 
         if self._step_count >= self._max_episode_steps:
@@ -370,8 +370,10 @@ class TBDecHuRoSorting(gym.Env):
         if verbose:
             agent_0, type_0 = self.get_agent_meanings(0, self._agent_type[0])
             agent_1, type_1 = self.get_agent_meanings(1, self._agent_type[1])
+            print("After updating step...\n\n")
             print(f'Step {self._step_count}: Agent {agent_0} reward: {self.reward} | Agent {agent_1} reward: {self.reward}\n')
             print(f'Step {self._step_count}: Agent {agent_0} done: {self._agent_dones} | Agent {agent_1} done: {self._agent_dones}\n')        
+            print("**"*25, "End of Step function", "**"*25)
 
         return one_hot_state, [self.reward] * self.n_agents, [self._agent_dones] * self.n_agents, {'info': 'Valid action, valid next state.', 'agent_types': self._agent_type, 'interactive': is_interactive}
 
@@ -394,12 +396,12 @@ class TBDecHuRoSorting(gym.Env):
     def _get_invalid_state(self):
         return np.concatenate([np.ones(self.nOnionLoc), np.ones(self.nEEFLoc), np.ones(self.nPredict), np.ones(self.nInteract), np.ones(self.nAgent_type), np.ones(self.nIndicate)])
 
-    def _get_init_obs(self, fixed_init=False):
+    def _get_init_obs(self, fixed_init=True):
         '''
         @brief - Samples from the start state distrib and returns a joint one hot obsv.
         '''
         if fixed_init:
-            s_r = s_h = self.vals2sid([3,3,1,0,0,2])    # Athome, Athome, Bad, False, Default_type, None
+            s_r = s_h = self.vals2sid([0,3,0,0,0,1])    # Unknown, Athome, Unknown, False, Default_type, Indicated
         else:
             self._update_start()
             s_r, s_h = self._sample_start()
@@ -457,19 +459,37 @@ class TBDecHuRoSorting(gym.Env):
         return bool(self._isValidState(onionLoc, eefLoc, pred, inter, ag_type, indicate) \
             and eefLoc != 1 and ag_type != 1 and indicate != 1 and inter != 1)
     
-    def _setNxtType(self, agent_id):        
-        if agent_id == 1:
-            if self.num_onions_sorted_by_agent[agent_id] > 2:
+    def _setNxtType(self, agent_id, a = None):    
+        
+        # For human, the type update happens exogenously    
+        if agent_id == 1:   # Human
+            # If human has sorted over 2 onions
+            if self._agent_type[agent_id] == 0 and self.num_onions_sorted_by_agent[agent_id] >= 5:
+                # They are now fatigued
                 self._set_agent_type(agent_id, 1)
+                # Reset num onions sorted by unfatigued agent
+                self.num_onions_sorted_by_agent[agent_id] = 0
+                
+            # If human is currently fatigued
             elif self._agent_type[agent_id] == 1:
+                # Start tracking their recovery time
                 self.recovery_time_count += 1
-                if self.recovery_time_count >= 5:
+                # If it has been 10 timesteps since fatigue
+                if self.recovery_time_count >= 10:
+                    # They switch back to unfatigued now
                     self._set_agent_type(agent_id, 0)
+                    # Reset num onions sorted by fatigued agent
+                    self.num_onions_sorted_by_agent[agent_id] = 0
+                    # Reset recovery time
                     self.recovery_time_count = 0
-        elif agent_id == 0:
-            if self._agent_type[agent_id] == 0 and self._agent_type[~agent_id] == 1:
+        
+        # For robot, its action changes its type
+        elif agent_id == 0:    # Robot
+            # If robot is in normal collab mode and human is fatigued
+            if a and a == 8:
+                # Robot becomes super-collaborative
                 self._set_agent_type(agent_id, 1)
-            else:
+            elif a and a == 9:
                 self._set_agent_type(agent_id, 0)
     
     def get_other_agents_types_ground_truth(self, curr_ag_id):
@@ -489,10 +509,15 @@ class TBDecHuRoSorting(gym.Env):
         This method is only used to train the belief network to make it learn the belief distribution.
         This is not used during policy training or execution.
         '''
+        # return [
+        #     random.choices(np.arange(self.nAgent_type), weights=[0.95, 0.05], k=1)[0]
+        #     for ag_id in range(self.n_agents) if ag_id != curr_ag_id
+        # ]
         return [
-            random.choices(np.arange(self.nAgent_type), weights=[0.95, 0.05], k=1)[0]
-            for ag_id in range(self.n_agents) if ag_id != curr_ag_id
-        ]
+            self._agent_type[ag_id]
+            for ag_id in range(self.n_agents)
+            if ag_id != curr_ag_id
+        ]  
     
     def _set_prev_obsv(self, agent_id, s_id):
         self.prev_obsv[agent_id] = copy.copy(s_id)
@@ -526,7 +551,7 @@ class TBDecHuRoSorting(gym.Env):
         Actions_Rob: {0: 'Noop', 1: 'Detect_any', 2: 'Detect_good', 3: 'Detect_bad', 4: 'Pick', 5: 'Inspect', 6: 'PlaceOnConveyor', 7: 'PlaceinBin', 8: 'Speed_up', 9: 'Slow_down'}
         Actions_Hum: {0: 'Noop', 1: 'Detect_any', 2: 'Detect_good', 3: 'Detect_bad', 4: 'Pick', 5: 'Inspect', 6: 'PlaceOnConveyor', 7: 'PlaceinBin', 8: 'Thumbs_up', 9: 'Thumbs_down'}
         '''
-        random.seed(time())        
+        random.seed(time())     
         
         # Updating agent type and indicate vars of the state
         if self._agent_type[agent_id] != ag_type:
@@ -536,13 +561,12 @@ class TBDecHuRoSorting(gym.Env):
         if a == 0:
             ''' Noop '''
             # Noop takes eef home to induce some change in the state so that the logic doesn't get stuck in a loop. 
-            # This is only used if eef atbin or onconv and onion is unknown i.e. after sorting an onion
             if eefLoc in [0, 1] and onionLoc == pred == 0:
                 eefLoc = 3
-            else:
-                if self.verbose:
-                    print(f"Agent {agent_id} doing NoOp action in state: {self.get_state_meanings(onionLoc, eefLoc, pred, inter, ag_type, indicate)}!\nNoOp should only be done by the robot upon interaction detection...\n")
-                pass                                
+            # else:
+            #     if self.verbose:
+            #         print(f"Agent {agent_id} doing NoOp action in state: {self.get_state_meanings(onionLoc, eefLoc, pred, inter, ag_type, indicate)}!\n\nNoOp should only be done by the robot upon interaction detection...\n")
+            #     pass                                
         elif a == 1:
             ''' Detect_any '''
             pred = random.choices([1,2], weights=[0.5, 0.5], k=1)[0]
@@ -595,7 +619,20 @@ class TBDecHuRoSorting(gym.Env):
             pred = 0
         elif a in [8, 9]:
             ''' Indicative actions for the other agent '''            
+            if agent_id == 0:
+                self._setNxtType(agent_id, a)
+            else:                
+                # NOTE: We start each episode with indicate flag True so as to prevent the policy from doing
+                # indicative actions at the beginning (because they take precedence over all non-interactive actions). 
+                # Since human's type evolves exogenously, the indicate flag can be turned on and off based on their type.
+                # However, since the robot's actions cause te robot's type to change, and the robot starts
+                # off with indicate = True, the policy won't suggest an indicative action until that flag is
+                # False. Therefore, we use the point of human doing indicative actions to reset robot's indicate
+                # flag. Is this pushing the definition of decentralized to its limit? Or just plain wrong?
+                self.nxt_s[0][-1] = 0
+                
             indicate = 1
+            ag_type = self._agent_type[agent_id]
         
         self.indicated[agent_id] = indicate
         
@@ -638,11 +675,15 @@ class TBDecHuRoSorting(gym.Env):
         elif action == 8:   # Speedup for rob; thumbs-up for human
             # For robot ag_type 1 is super collaborative, so speed-up can only be done there and only once
             # For human ag_type 0 is unfatigued, so thumbs-up to indicate unfatigued can only be done there and only once
-            return (ag_type == 1 and inter != 1 and indicate != 1) if agent_id == 0 else (ag_type == 0 and inter != 1 and indicate != 1)
+            # NOTE: For human, this is just an indicative action to inform his updated type, whereas for robot this action 
+            # changes its type. So for human the updated type has to be considered and for robot the type is yet to change.
+            return (ag_type == 0 and inter != 1 and indicate != 1) if agent_id == 0 else (ag_type == 0 and inter != 1 and indicate != 1)
         elif action == 9:   # Slow-down for rob; thumbs-down for human 
             # For robot ag_type 0 is collaborative, so slow-down can only be done there and only once
             # For human ag_type 1 is fatigued, so thumbs-down to indicate fatigued can only be done there and only once
-            return (ag_type == 0 and inter != 1 and indicate != 1) if agent_id == 0 else (ag_type == 1 and inter != 1 and indicate != 1)
+            # NOTE: For human, this is just an indicative action to inform his updated type, whereas for robot this action 
+            # changes its type. So for human the updated type has to be considered and for robot the type is yet to change.
+            return (ag_type == 1 and inter != 1 and indicate != 1) if agent_id == 0 else (ag_type == 1 and inter != 1 and indicate != 1)
         else:
             logger.error(f"Step {self._step_count}: Trying an impossible action are we? Better luck next time!")
             return False
