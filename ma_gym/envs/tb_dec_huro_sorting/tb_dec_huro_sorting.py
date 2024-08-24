@@ -172,7 +172,7 @@ class TBDecHuRoSorting(gym.Env):
         self._obs_low = np.zeros(self.nOnionLoc+self.nEEFLoc+self.nPredict+self.nInteract+self.nAgent_type+self.nIndicate+self.nAgent_type) 
         self.observation_space = MultiAgentObservationSpace([spaces.Box(self._obs_low, self._obs_high)
                                                             for _ in range(self.n_agents)])
-        self.step_cost = 0.0
+        self.step_cost = -0.01
         self.reward = self.step_cost
         self.nxt_s = {}
         self._full_obs = None
@@ -259,7 +259,7 @@ class TBDecHuRoSorting(gym.Env):
         if inter_rob == 1 and act_rob != 0:
             self.reward -= 3
 
-    def reset(self, fixed_init=True):
+    def reset(self, fixed_init=False):
         '''
         @brief - Just setting all params to defaults and returning a valid start obsv.
         '''
@@ -273,6 +273,8 @@ class TBDecHuRoSorting(gym.Env):
         self.num_onions_sorted_by_agent = [0]*self.n_agents
         self.recovery_time_count = 0
         self.indicated = {ag_id: 0 for ag_id in range(self.n_agents)}
+        for i in range(self.n_agents):
+            self.action_space[i].seed(random.seed(time()))
         # self.true_label = [0]*self.n_agents        
         # self.onion_in_focus_status = ['']*self.n_agents
         # self.belief_prob_counter = 0
@@ -325,7 +327,7 @@ class TBDecHuRoSorting(gym.Env):
                     self.nxt_s[agent_i] = self._findNxtState(agent_id=agent_i, onionLoc=o_loc, eefLoc=eef_loc, pred=pred, inter=inter, indicate=indicate, ag_type=self_type, a=action)
                 else:
                     if verbose:
-                        logger.error(f"Step {self._step_count}: Invalid action: {self.get_action_meanings(action, ag_id=agent_i)}, in current state: {self.get_state_meanings(o_loc, eef_loc, pred, inter, self_type, indicate, ag_id=agent_i)}, {AGENT_MEANING[agent_i]} agent can't transition anywhere else with this. Staying put and ending episode!")
+                        print(f"Step {self._step_count}: Invalid action: {self.get_action_meanings(action, ag_id=agent_i)}, in current state: {self.get_state_meanings(o_loc, eef_loc, pred, inter, self_type, indicate, ag_id=agent_i)}, {AGENT_MEANING[agent_i]} agent can't transition anywhere else with this. Staying put and ending episode!")
                     self._agent_dones = True
 
                     ''' Sending all invalid actions to an impossible sink state'''
@@ -335,7 +337,7 @@ class TBDecHuRoSorting(gym.Env):
                     return one_hot_state, [self.reward] * self.n_agents, [self._agent_dones] * self.n_agents, {'info': 'Invalid action reached a sink state.', 'agent_types': self._agent_type}
             else:
                 if verbose:
-                    logger.error(f"Step {self._step_count}: Invalid current state {self.get_state_meanings(o_loc, eef_loc, pred, inter, self_type, indicate, ag_id=agent_i)} for {AGENT_MEANING[agent_i]} agent, ending episode!")
+                    print(f"Step {self._step_count}: Invalid current state {self.get_state_meanings(o_loc, eef_loc, pred, inter, self_type, indicate, ag_id=agent_i)} for {AGENT_MEANING[agent_i]} agent, ending episode!")
                 self._agent_dones = True
                 raise ValueError(f"Invalid state: Agent {agent_i} state: {self.get_state_meanings(o_loc, eef_loc, pred, inter, self_type, indicate, ag_id=agent_i)}, action:{action}.\n Shouldn't be reaching an invalid state!")
 
@@ -360,7 +362,7 @@ class TBDecHuRoSorting(gym.Env):
             self.steps_beyond_done = 0
         elif self.steps_beyond_done is not None:
             if self.steps_beyond_done == 0:
-                logger.warning(
+                print(
                     f"Step {self._step_count}: You are calling 'step()' even though this environment has already returned all(dones) = True for "
                     "all agents. You should always call 'reset()' once you receive 'all(dones) = True' -- any further"
                     " steps are undefined behavior.")
@@ -628,7 +630,7 @@ class TBDecHuRoSorting(gym.Env):
                 # However, since the robot's actions cause te robot's type to change, and the robot starts
                 # off with indicate = True, the policy won't suggest an indicative action until that flag is
                 # False. Therefore, we use the point of human doing indicative actions to reset robot's indicate
-                # flag. Is this pushing the definition of decentralized to its limit? Or just plain wrong?
+                # flag. Since this happens within the MDP, the decentralized nature of the agents isn't affected.
                 self.nxt_s[0][-1] = 0
                 
             indicate = 1
@@ -677,15 +679,15 @@ class TBDecHuRoSorting(gym.Env):
             # For human ag_type 0 is unfatigued, so thumbs-up to indicate unfatigued can only be done there and only once
             # NOTE: For human, this is just an indicative action to inform his updated type, whereas for robot this action 
             # changes its type. So for human the updated type has to be considered and for robot the type is yet to change.
-            return (ag_type == 0 and inter != 1 and indicate != 1) if agent_id == 0 else (ag_type == 0 and inter != 1 and indicate != 1)
+            return (ag_type == 0 and inter != 1 and indicate != 1) if agent_id == 0 else (ag_type == 0 and indicate != 1)
         elif action == 9:   # Slow-down for rob; thumbs-down for human 
             # For robot ag_type 0 is collaborative, so slow-down can only be done there and only once
             # For human ag_type 1 is fatigued, so thumbs-down to indicate fatigued can only be done there and only once
             # NOTE: For human, this is just an indicative action to inform his updated type, whereas for robot this action 
             # changes its type. So for human the updated type has to be considered and for robot the type is yet to change.
-            return (ag_type == 1 and inter != 1 and indicate != 1) if agent_id == 0 else (ag_type == 1 and inter != 1 and indicate != 1)
+            return (ag_type == 1 and inter != 1 and indicate != 1) if agent_id == 0 else (ag_type == 1 and indicate != 1)
         else:
-            logger.error(f"Step {self._step_count}: Trying an impossible action are we? Better luck next time!")
+            print(f"Step {self._step_count}: Trying an impossible action are we? Better luck next time!")
             return False
         
     def get_action_meanings(self, action, ag_id=0):
